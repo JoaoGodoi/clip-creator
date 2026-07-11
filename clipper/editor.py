@@ -98,9 +98,15 @@ def render_short(
     stack = "vstack,format=yuv420p"
     if ass_file:
         stack += f",ass='{_filter_path(ass_file)}'"
+
+    def cover(w: int, h: int) -> str:
+        """Preenche WxH a partir de qualquer proporção (escala e corta o excesso)."""
+        return (f"scale={w}:{h}:force_original_aspect_ratio=increase:"
+                f"force_divisible_by=2,crop={w}:{h}")
+
     fc = (
-        f"[0:v]crop=ih*{1080 / top_h:.6f}:ih,scale=1080:{top_h},fps=30[top];"
-        f"[1:v]crop=ih*{1080 / bot_h:.6f}:ih,scale=1080:{bot_h},fps=30[bot];"
+        f"[0:v]{cover(1080, top_h)},fps=30[top];"
+        f"[1:v]{cover(1080, bot_h)},fps=30[bot];"
         f"[top][bot]{stack}[v]"
     )
     _run([
