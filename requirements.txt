@@ -3,6 +3,7 @@ uvicorn[standard]
 yt-dlp
 faster-whisper
 anthropic
+requests
 pillow
 pyyaml
 nvidia-cublas-cu12

@@ -24,11 +24,34 @@ class JobReq(BaseModel):
     title: str
 
 
+def _llm_status() -> tuple[bool, str]:
+    cfg = CONFIG["llm"]
+    provider = cfg.get("provider", "ollama")
+    if provider == "anthropic":
+        if has_api_key():
+            return True, f"claude: {cfg.get('anthropic_model', '?')}"
+        return False, "sem ANTHROPIC_API_KEY (modo mock)"
+
+    import requests
+
+    model = cfg.get("ollama_model", "?")
+    try:
+        resp = requests.get(f"{cfg.get('ollama_url', 'http://localhost:11434')}/api/tags", timeout=2)
+        names = [m["name"] for m in resp.json().get("models", [])]
+    except Exception:  # noqa: BLE001 — qualquer falha = ollama fora do ar
+        return False, "ollama não está rodando"
+    if any(n == model or n.startswith(model + ":") or n.split(":")[0] == model for n in names):
+        return True, f"ollama: {model}"
+    return False, f"modelo {model} não baixado (ollama pull {model})"
+
+
 @app.get("/api/health")
 def health() -> dict:
+    llm_ok, llm_detail = _llm_status()
     return {
         "ffmpeg": bool(FFMPEG),
-        "api_key": has_api_key(),
+        "llm_ok": llm_ok,
+        "llm_detail": llm_detail,
         "intro": (ROOT / CONFIG["paths"]["assets"] / "intro.mp4").exists(),
         "outro": (ROOT / CONFIG["paths"]["assets"] / "outro.mp4").exists(),
         "whisper_model": CONFIG["whisper"]["model"],

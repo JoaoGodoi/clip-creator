@@ -14,9 +14,11 @@ whisper:
   language: pt
 
 llm:
-  model: claude-sonnet-5
-  # A chave vem da variável de ambiente ANTHROPIC_API_KEY.
-  # Sem chave, o app gera cortes "mock" (janelas de tempo) só para testar o pipeline.
+  provider: ollama            # ollama (local, grátis) | anthropic (API, melhor qualidade)
+  ollama_model: qwen3:8b
+  ollama_url: http://localhost:11434
+  block_minutes: 20           # tamanho do bloco de transcrição analisado por vez (ollama)
+  anthropic_model: claude-sonnet-5   # usado se provider: anthropic (requer ANTHROPIC_API_KEY)
 
 cuts:
   long:

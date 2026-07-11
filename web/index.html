@@ -103,7 +103,7 @@ async function loadHealth() {
       `<span class="chip ${ok ? 'ok' : 'warn'}">${ok ? okText : warnText}</span>`;
     $('chips').innerHTML =
       chip(h.ffmpeg, '✓ ffmpeg', '✗ ffmpeg não encontrado') +
-      chip(h.api_key, '✓ chave da API', '⚠ sem ANTHROPIC_API_KEY (modo mock)') +
+      chip(h.llm_ok, '✓ ' + h.llm_detail, '⚠ ' + h.llm_detail) +
       chip(h.intro, '✓ intro.mp4', '– sem intro') +
       chip(h.outro, '✓ outro.mp4', '– sem ending') +
       `<span class="chip">whisper: ${h.whisper_model}</span>`;
