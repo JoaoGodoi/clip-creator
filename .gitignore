@@ -3,3 +3,4 @@ data/
 output/
 __pycache__/
 *.pyc
+assets/dopamine/*.mp4
