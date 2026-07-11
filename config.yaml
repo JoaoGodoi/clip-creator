@@ -1,0 +1,33 @@
+# Configuração do Podcast Clipper
+
+podcast:
+  # Nome do podcast de origem, usado nos créditos das descrições
+  nome: ""
+
+paths:
+  downloads: data/downloads
+  output: output
+  assets: assets            # coloque intro.mp4 e outro.mp4 aqui (opcionais)
+
+whisper:
+  model: medium             # tiny | base | small | medium | large-v3
+  language: pt
+
+llm:
+  model: claude-sonnet-5
+  # A chave vem da variável de ambiente ANTHROPIC_API_KEY.
+  # Sem chave, o app gera cortes "mock" (janelas de tempo) só para testar o pipeline.
+
+cuts:
+  long:
+    count: 2                # cortes longos por vídeo
+    min_minutes: 10
+    max_minutes: 12
+  shorts:
+    count: 5                # shorts/reels por vídeo
+    min_seconds: 25
+    max_seconds: 75
+
+render:
+  crf: 20
+  preset: veryfast

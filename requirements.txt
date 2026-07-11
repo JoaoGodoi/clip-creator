@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+yt-dlp
+faster-whisper
+anthropic
+pillow
+pyyaml
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
