@@ -7,10 +7,11 @@ import subprocess
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from clipper import channel, jobs
+from clipper import channel, jobs, uploader
 from clipper.config import CONFIG, FFMPEG, ROOT, has_api_key, path_for
 
 app = FastAPI(title="Podcast Clipper")
@@ -164,6 +165,64 @@ def open_folder(req: ChannelReq) -> dict:
         raise HTTPException(400, "Pasta inválida")
     subprocess.Popen(["explorer", str(target)])
     return {"ok": True}
+
+
+# ── YouTube (OAuth + upload) ─────────────────────────────────────────────────
+
+@app.get("/api/auth/status")
+def auth_status() -> dict:
+    return uploader.status()
+
+
+@app.post("/api/auth/start")
+def auth_start() -> dict:
+    try:
+        url = uploader.auth_url("http://localhost:8765/oauth2callback")
+    except FileNotFoundError as e:
+        raise HTTPException(409, str(e))
+    return {"auth_url": url}
+
+
+@app.get("/oauth2callback")
+def oauth_callback(code: str = "", error: str = "") -> HTMLResponse:
+    style = "font-family:sans-serif;background:#0f1115;color:#e8eaf0;text-align:center;padding-top:20vh"
+    if error or not code:
+        return HTMLResponse(f"<body style='{style}'><h2>Login cancelado ({error or 'sem código'})</h2></body>")
+    try:
+        uploader.finish_auth(code)
+    except Exception as e:  # noqa: BLE001 — erro do OAuth vai para a página
+        return HTMLResponse(f"<body style='{style}'><h2>Falha no login</h2><p>{e}</p></body>")
+    return HTMLResponse(
+        f"<body style='{style}'><h2>✅ YouTube conectado!</h2>"
+        f"<p>Pode fechar esta aba e voltar ao Podcast Clipper.</p></body>"
+    )
+
+
+@app.post("/api/auth/disconnect")
+def auth_disconnect() -> dict:
+    uploader.disconnect()
+    return {"ok": True}
+
+
+@app.get("/api/library")
+def get_library() -> dict:
+    return {"clips": uploader.library()}
+
+
+@app.post("/api/upload")
+def create_upload(req: ChannelReq) -> dict:
+    folder = Path(req.url).resolve()
+    out_root = path_for("output").resolve()
+    if not folder.is_relative_to(out_root) or not (folder / "metadata.json").exists():
+        raise HTTPException(400, "Pasta de corte inválida")
+    if not uploader.status()["connected"]:
+        raise HTTPException(409, "YouTube não conectado — clique em 'Conectar YouTube'")
+    return {"upload_id": uploader.start_upload(folder)}
+
+
+@app.get("/api/uploads")
+def list_uploads() -> dict:
+    return {"uploads": list(uploader.UPLOADS.values())}
 
 
 app.mount("/files", StaticFiles(directory=path_for("output")), name="files")

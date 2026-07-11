@@ -33,3 +33,7 @@ cuts:
 render:
   crf: 20
   preset: veryfast
+
+upload:
+  privacy: private        # private | unlisted | public (app não verificado: YouTube força private)
+  category_id: "24"       # 24 = Entertainment

@@ -6,3 +6,4 @@ __pycache__/
 assets/dopamine/*.mp4
 assets/overlay/*.mp4
 assets/overlay/*.gif
+client_secret.json

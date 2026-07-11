@@ -8,3 +8,5 @@ pillow
 pyyaml
 nvidia-cublas-cu12
 nvidia-cudnn-cu12
+google-api-python-client
+google-auth-oauthlib

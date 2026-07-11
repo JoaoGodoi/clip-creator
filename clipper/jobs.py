@@ -140,7 +140,7 @@ def _clip_meta(cut: dict, folder: Path, files: dict) -> dict:
     meta = {
         "title": cut["title"], "description": cut["description"],
         "hashtags": cut["hashtags"], "start": cut["start"], "end": cut["end"],
-        "duration": round(cut["end"] - cut["start"], 1), **files,
+        "duration": round(cut["end"] - cut["start"], 1), "folder": str(folder), **files,
     }
     (folder / "metadata.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"

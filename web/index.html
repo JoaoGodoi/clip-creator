@@ -81,6 +81,7 @@
   <header>
     <h1>🎬 Podcast <span>Clipper</span></h1>
     <div class="chips" id="chips"></div>
+    <div id="authBox"></div>
   </header>
 
   <div class="card">
@@ -99,6 +100,14 @@
   </div>
 
   <div id="jobsArea"></div>
+
+  <div class="card">
+    <div class="storage-head">
+      <h2>📚 Cortes prontos <span class="hint" id="libraryCount"></span></h2>
+      <button class="ghost" onclick="loadLibrary()">Atualizar</button>
+    </div>
+    <div id="libraryList"><div class="storage-empty">Nenhum corte no disco ainda.</div></div>
+  </div>
 
   <div class="card">
     <div class="storage-head">
@@ -236,7 +245,7 @@ function updateJob(j) {
   appendResults(j);
 
   const finished = j.status === 'concluído' || j.status === 'erro';
-  if (finished && jobStatusSeen[j.id] !== j.status) loadStorage();
+  if (finished && jobStatusSeen[j.id] !== j.status) { loadStorage(); loadLibrary(); }
   jobStatusSeen[j.id] = j.status;
 }
 
@@ -275,6 +284,7 @@ function clipCard(c) {
         <textarea readonly>${esc(c.description)}</textarea>
         <div class="job-actions">
           <button class="ghost" onclick="copyDesc(this)">Copiar descrição</button>
+          ${uploadControl(c.folder, c.youtube_url)}
         </div>
       </div>
     </div>`;
@@ -300,6 +310,112 @@ async function refreshJobs() {
   const active = data.jobs.some(j => j.status === 'rodando' || j.status === 'na fila');
   if (!active && polling) { clearInterval(polling); polling = null; }
   if (active && !polling) polling = setInterval(refreshJobs, 1500);
+}
+
+// ── YouTube: conexão e uploads ──────────────────────────────────────────────
+
+let authPoll = null;
+
+async function loadAuth() {
+  const box = $('authBox');
+  try {
+    const s = await api('/api/auth/status');
+    if (!s.configured) {
+      box.innerHTML = '<span class="chip warn">⚠ YouTube: falta client_secret.json (ver GOOGLE_SETUP.md)</span>';
+    } else if (!s.connected) {
+      box.innerHTML = '<button onclick="connectYT()">🔗 Conectar YouTube</button>';
+    } else {
+      if (authPoll) { clearInterval(authPoll); authPoll = null; }
+      box.innerHTML = `<span class="chip ok">✓ YouTube: ${esc(s.channel || 'conectado')}</span>
+        <button class="ghost" style="margin-left:6px;padding:4px 10px;font-size:.75rem" onclick="disconnectYT()">sair</button>`;
+    }
+  } catch { /* servidor iniciando */ }
+}
+
+async function connectYT() {
+  try {
+    const d = await api('/api/auth/start', {});
+    window.open(d.auth_url, '_blank');
+    if (!authPoll) authPoll = setInterval(loadAuth, 3000);
+  } catch (e) { alert(e.message); }
+}
+
+async function disconnectYT() {
+  if (!confirm('Desconectar a conta do YouTube?')) return;
+  await api('/api/auth/disconnect', {});
+  loadAuth();
+}
+
+function uploadControl(folder, youtubeUrl) {
+  if (!folder) return '';
+  if (youtubeUrl) {
+    return `<a class="chip ok" style="text-decoration:none" data-folder="${esc(folder)}"
+      href="${esc(youtubeUrl)}" target="_blank">▶ no YouTube</a>`;
+  }
+  return `<button class="ghost btn-upload" data-folder="${esc(folder)}"
+    onclick='uploadClip(this)'>⬆ Enviar ao YouTube</button>`;
+}
+
+let uploadsPoll = null;
+
+async function uploadClip(btn) {
+  const folder = btn.dataset.folder;
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Enviando… 0%';
+    await api('/api/upload', { url: folder });
+    if (!uploadsPoll) uploadsPoll = setInterval(pollUploads, 1500);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '⬆ Enviar ao YouTube';
+    alert(e.message);
+  }
+}
+
+async function pollUploads() {
+  const d = await api('/api/uploads').catch(() => null);
+  if (!d) return;
+  let active = false;
+  for (const up of d.uploads) {
+    const els = document.querySelectorAll(`[data-folder="${CSS.escape(up.folder)}"]`);
+    for (const el of els) {
+      if (up.status === 'enviando') {
+        active = true;
+        el.disabled = true;
+        el.textContent = `Enviando… ${up.progress}%`;
+      } else if (up.status === 'concluído' && el.tagName === 'BUTTON') {
+        el.outerHTML = uploadControl(up.folder, up.url);
+      } else if (up.status === 'erro' && el.tagName === 'BUTTON') {
+        el.disabled = false;
+        el.textContent = '⬆ Tentar de novo';
+        el.title = up.error;
+        if (!el.dataset.errShown) { el.dataset.errShown = '1'; alert('Falha no upload:\n' + up.error); }
+      }
+    }
+  }
+  if (!active && uploadsPoll) { clearInterval(uploadsPoll); uploadsPoll = null; loadLibrary(); }
+}
+
+// ── Biblioteca de cortes no disco ───────────────────────────────────────────
+
+async function loadLibrary() {
+  try {
+    const d = await api('/api/library');
+    $('libraryCount').textContent = d.clips.length ? `(${d.clips.length})` : '';
+    if (!d.clips.length) {
+      $('libraryList').innerHTML = '<div class="storage-empty">Nenhum corte no disco ainda.</div>';
+      return;
+    }
+    $('libraryList').innerHTML = d.clips.map(c => `
+      <div class="file-row">
+        <span>${c.kind === 'long' ? '🎥' : '📱'}</span>
+        <span class="fname" title="${esc(c.episode)}">
+          <a href="/files/${encodeURI(c.video)}" target="_blank" style="color:inherit">${esc(c.title)}</a>
+        </span>
+        <span class="fsize">${c.kind === 'long' ? (c.duration / 60).toFixed(1) + ' min' : c.duration.toFixed(0) + 's'}</span>
+        ${uploadControl(c.folder, c.youtube_url)}
+      </div>`).join('');
+  } catch { /* servidor iniciando */ }
 }
 
 // ── Arquivos no disco ───────────────────────────────────────────────────────
@@ -351,8 +467,11 @@ $('dopamineChk').checked = localStorage.getItem('dopamine') === '1';
 $('dopamineChk').onchange = () => localStorage.setItem('dopamine', $('dopamineChk').checked ? '1' : '0');
 
 loadHealth();
+loadAuth();
+loadLibrary();
 loadStorage();
 refreshJobs();
+pollUploads();
 </script>
 </body>
 </html>
