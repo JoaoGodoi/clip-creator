@@ -325,12 +325,24 @@ async function loadStorage() {
 
 async function deleteItem(path, name) {
   if (!confirm(`Apagar "${name}"?\n\nIsso remove o arquivo do disco (a transcrição em cache é mantida).`)) return;
-  try { await api('/api/delete', { url: path }); loadStorage(); } catch (e) { alert(e.message); }
+  try {
+    const base = path.split('\\').pop();
+    document.querySelectorAll('video').forEach(v => {
+      if (decodeURI(v.src).includes(base)) { v.pause(); v.removeAttribute('src'); v.load(); }
+    });
+    await api('/api/delete', { url: path });
+    loadStorage();
+  } catch (e) { alert(e.message); }
 }
 
 async function deleteAll() {
   if (!confirm('Apagar TODOS os vídeos baixados e TODOS os cortes gerados?\n\nAs transcrições em cache são mantidas (re-processar fica rápido).')) return;
-  try { await api('/api/delete_all'); loadStorage(); } catch (e) { alert(e.message); }
+  try {
+    document.querySelectorAll('video').forEach(v => { v.pause(); v.removeAttribute('src'); v.load(); });
+    const r = await api('/api/delete_all', {});
+    if (r.errors && r.errors.length) alert('Alguns itens não puderam ser apagados:\n' + r.errors.join('\n'));
+    loadStorage();
+  } catch (e) { alert(e.message); }
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────

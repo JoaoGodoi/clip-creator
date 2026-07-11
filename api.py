@@ -100,22 +100,30 @@ def _safe_target(raw: str) -> Path:
 @app.post("/api/delete")
 def delete_item(req: ChannelReq) -> dict:
     target = _safe_target(req.url)
-    if target.is_dir():
-        shutil.rmtree(target)
-    else:
-        target.unlink()
+    try:
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+    except PermissionError:
+        raise HTTPException(
+            409, f"'{target.name}' está em uso — feche o vídeo/player e tente de novo"
+        )
     return {"ok": True}
 
 
 @app.post("/api/delete_all")
 def delete_all() -> dict:
     """Apaga todos os vídeos baixados e todos os cortes gerados (mantém transcrições)."""
-    for f in path_for("downloads").glob("*.mp4"):
-        f.unlink()
-    for d in path_for("output").iterdir():
-        if d.is_dir():
-            shutil.rmtree(d)
-    return {"ok": True}
+    errors: list[str] = []
+    targets = list(path_for("downloads").glob("*.mp4"))
+    targets += [d for d in path_for("output").iterdir() if d.is_dir()]
+    for t in targets:
+        try:
+            shutil.rmtree(t) if t.is_dir() else t.unlink()
+        except PermissionError:
+            errors.append(f"{t.name} (em uso)")
+    return {"ok": not errors, "errors": errors}
 
 
 @app.post("/api/channel")
