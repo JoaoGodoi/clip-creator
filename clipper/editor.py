@@ -74,6 +74,12 @@ def render_long(src: Path, start: float, end: float, out: Path) -> Path:
     return out
 
 
+def _cover(w: int, h: int) -> str:
+    """Preenche WxH a partir de qualquer proporção (escala e corta o excesso)."""
+    return (f"scale={w}:{h}:force_original_aspect_ratio=increase:"
+            f"force_divisible_by=2,crop={w}:{h}")
+
+
 def render_short(
     src: Path,
     start: float,
@@ -81,39 +87,55 @@ def render_short(
     ass_file: Path | None,
     out: Path,
     bg: Path | None = None,
+    overlay: Path | None = None,
 ) -> Path:
-    """Short 9:16. Com `bg` (modo dopamina), o vídeo principal ocupa os 60% de
-    cima e o gameplay em loop (sem áudio) os 40% de baixo."""
-    if not bg:
-        vf = "crop=ih*9/16:ih,scale=1080:1920,fps=30,format=yuv420p"
-        if ass_file:
-            vf += f",ass='{_filter_path(ass_file)}'"
+    """Short 9:16 em três variações:
+
+    - `bg` (modo dopamina): vídeo nos 60% de cima, gameplay em loop nos 40% de
+      baixo, com sombra em degradê suavizando a emenda.
+    - `overlay`: fundo animado em loop preenchendo a tela, vídeo por cima um
+      pouco menor, deixando borda lateral visível.
+    - nenhum: crop 9:16 tradicional em tela cheia.
+    """
+    ass_part = f",ass='{_filter_path(ass_file)}'" if ass_file else ""
+
+    if bg:
+        top_h, bot_h, fade = 1152, 768, 220  # 60/40 de 1920; faixa do degradê
+        half = fade // 2
+        fc = (
+            f"[0:v]{_cover(1080, top_h)},fps=30[top];"
+            f"[1:v]{_cover(1080, bot_h)},fps=30[bot];"
+            f"[top][bot]vstack[stk];"
+            f"color=black:s=1080x{fade},format=yuva420p,"
+            f"geq=lum=0:cb=128:cr=128:a='235*(1-abs(Y-{half})/{half})'[shade];"
+            f"[stk][shade]overlay=0:{top_h - half},format=yuv420p{ass_part}[v]"
+        )
         _run([
             "-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", str(src),
-            "-vf", vf, *_enc(), str(out),
+            "-stream_loop", "-1", "-i", str(bg),
+            "-filter_complex", fc, "-map", "[v]", "-map", "0:a", "-shortest",
+            *_enc(), str(out),
         ])
         return out
 
-    top_h, bot_h = 1152, 768  # 60% / 40% de 1920
-    stack = "vstack,format=yuv420p"
-    if ass_file:
-        stack += f",ass='{_filter_path(ass_file)}'"
+    if overlay:
+        fc = (
+            f"[1:v]{_cover(1080, 1920)},fps=30[bgv];"
+            f"[0:v]{_cover(1000, 1778)},fps=30[main];"
+            f"[bgv][main]overlay=(W-w)/2:(H-h)/2,format=yuv420p{ass_part}[v]"
+        )
+        _run([
+            "-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", str(src),
+            "-stream_loop", "-1", "-i", str(overlay),
+            "-filter_complex", fc, "-map", "[v]", "-map", "0:a", "-shortest",
+            *_enc(), str(out),
+        ])
+        return out
 
-    def cover(w: int, h: int) -> str:
-        """Preenche WxH a partir de qualquer proporção (escala e corta o excesso)."""
-        return (f"scale={w}:{h}:force_original_aspect_ratio=increase:"
-                f"force_divisible_by=2,crop={w}:{h}")
-
-    fc = (
-        f"[0:v]{cover(1080, top_h)},fps=30[top];"
-        f"[1:v]{cover(1080, bot_h)},fps=30[bot];"
-        f"[top][bot]{stack}[v]"
-    )
+    vf = f"{_cover(1080, 1920)},fps=30,format=yuv420p{ass_part}"
     _run([
         "-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", str(src),
-        "-stream_loop", "-1", "-i", str(bg),
-        "-filter_complex", fc, "-map", "[v]", "-map", "0:a", "-shortest",
-        *_enc(), str(out),
+        "-vf", vf, *_enc(), str(out),
     ])
     return out
 

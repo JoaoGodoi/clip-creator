@@ -11,7 +11,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Shorts,Arial Black,95,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,60,60,620,1
+Style: Shorts,Arial Black,95,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,60,60,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -27,8 +27,18 @@ def _ass_time(t: float) -> str:
     return f"{cs // 360000}:{cs % 360000 // 6000:02d}:{cs % 6000 // 100:02d}.{cs % 100:02d}"
 
 
-def build_ass(words: list[dict], clip_start: float, clip_end: float, out_path: Path) -> Path:
-    """Escreve o .ass com blocos de até MAX_WORDS palavras, tempos relativos ao corte."""
+def build_ass(
+    words: list[dict],
+    clip_start: float,
+    clip_end: float,
+    out_path: Path,
+    margin_v: int = 620,
+) -> Path:
+    """Escreve o .ass com blocos de até MAX_WORDS palavras, tempos relativos ao corte.
+
+    margin_v posiciona a legenda a partir da base (620 = short cheio;
+    ~820 coloca o texto dentro do painel de vídeo no modo dopamina).
+    """
     clip_words = [w for w in words if w["start"] >= clip_start - 0.2 and w["end"] <= clip_end + 0.2]
 
     lines: list[str] = []
@@ -53,5 +63,6 @@ def build_ass(words: list[dict], clip_start: float, clip_end: float, out_path: P
             flush()
     flush()
 
-    out_path.write_text(ASS_HEADER + "\n".join(lines) + "\n", encoding="utf-8")
+    header = ASS_HEADER.format(margin_v=margin_v)
+    out_path.write_text(header + "\n".join(lines) + "\n", encoding="utf-8")
     return out_path

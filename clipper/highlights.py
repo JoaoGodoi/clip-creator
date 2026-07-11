@@ -39,9 +39,7 @@ Podcast: {podcast}
 Duração total: {duration_min:.0f} minutos
 
 Selecione:
-1. {n_long} CORTES LONGOS de {long_min} a {long_max} minutos — blocos temáticos coesos \
-que funcionam como vídeo independente no YouTube (uma história completa, uma discussão \
-com começo/meio/fim).
+{long_req}
 2. {n_shorts} SHORTS de {s_min} a {s_max} segundos — momentos com gancho forte nos \
 primeiros 3 segundos, autocontidos, com pico de humor, polêmica, emoção ou insight.
 
@@ -60,8 +58,7 @@ PROMPT_BLOCK = """Você é um editor de cortes de podcast experiente. Abaixo est
 Liste os candidatos a corte que existem DENTRO deste trecho:
 1. Até 3 SHORTS de {s_min} a {s_max} segundos — momentos com gancho forte nos primeiros \
 3 segundos, autocontidos, com pico de humor, polêmica, emoção ou insight.
-2. Até 2 CORTES LONGOS de {long_min} a {long_max} minutos — SOMENTE se este trecho \
-contiver um bloco temático coeso completo (história ou discussão com começo, meio e fim).
+{long_req}
 
 Se o trecho não tiver bons candidatos, retorne listas vazias — não invente.
 
@@ -140,6 +137,32 @@ def _fit_duration(
     return start, end
 
 
+def _wants_long(duration: float, log: Callable[[str], None]) -> bool:
+    """Vídeo menor que o corte longo mínimo gera só shorts."""
+    min_s = CONFIG["cuts"]["long"]["min_minutes"] * 60
+    if duration < min_s:
+        log(f"Vídeo curto ({duration / 60:.0f} min) — gerando apenas shorts")
+        return False
+    return True
+
+
+def _long_req(want_long: bool, per_block: bool) -> str:
+    cfg = CONFIG["cuts"]["long"]
+    if not want_long:
+        return 'NÃO sugira cortes longos — o vídeo é curto demais. Retorne "long": [].'
+    if per_block:
+        return (
+            f"2. Até 2 CORTES LONGOS de {cfg['min_minutes']} a {cfg['max_minutes']} minutos "
+            f"— SOMENTE se este trecho contiver um bloco temático coeso completo "
+            f"(história ou discussão com começo, meio e fim)."
+        )
+    return (
+        f"1. {cfg['count']} CORTES LONGOS de {cfg['min_minutes']} a {cfg['max_minutes']} "
+        f"minutos — blocos temáticos coesos que funcionam como vídeo independente no "
+        f"YouTube (uma história completa, uma discussão com começo/meio/fim)."
+    )
+
+
 # ── Entrada principal ────────────────────────────────────────────────────────
 
 def find_highlights(
@@ -211,6 +234,7 @@ def _ollama_highlights(transcript: dict, video_title: str, video_url: str, log) 
     cuts_cfg = CONFIG["cuts"]
     block_seconds = cfg.get("block_minutes", 20) * 60
     blocks = _blocks(transcript["segments"], block_seconds)
+    want_long = _wants_long(transcript["duration"], log)
     log(f"Analisando transcrição em {len(blocks)} bloco(s) com {cfg['ollama_model']} (local)")
 
     candidates: dict[str, list[dict]] = {"long": [], "shorts": []}
@@ -223,8 +247,7 @@ def _ollama_highlights(transcript: dict, video_title: str, video_url: str, log) 
             podcast=CONFIG["podcast"]["nome"] or "podcast original",
             s_min=cuts_cfg["shorts"]["min_seconds"],
             s_max=cuts_cfg["shorts"]["max_seconds"],
-            long_min=cuts_cfg["long"]["min_minutes"],
-            long_max=cuts_cfg["long"]["max_minutes"],
+            long_req=_long_req(want_long, per_block=True),
             rules=RULES,
             item_fmt=ITEM_FMT,
             transcript="\n".join(lines),
@@ -313,9 +336,7 @@ def _anthropic_highlights(transcript: dict, video_title: str, video_url: str, lo
         video_title=video_title,
         podcast=CONFIG["podcast"]["nome"] or "podcast original",
         duration_min=duration / 60,
-        n_long=cuts_cfg["long"]["count"],
-        long_min=cuts_cfg["long"]["min_minutes"],
-        long_max=cuts_cfg["long"]["max_minutes"],
+        long_req=_long_req(_wants_long(duration, log), per_block=False),
         n_shorts=cuts_cfg["shorts"]["count"],
         s_min=cuts_cfg["shorts"]["min_seconds"],
         s_max=cuts_cfg["shorts"]["max_seconds"],

@@ -4,3 +4,5 @@ output/
 __pycache__/
 *.pyc
 assets/dopamine/*.mp4
+assets/overlay/*.mp4
+assets/overlay/*.gif

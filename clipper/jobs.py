@@ -171,24 +171,32 @@ def _render_long(job: Job, src: Path, out_root: Path, i: int, cut: dict, transcr
     })
 
 
-def _pick_dopamine(job: Job) -> Path | None:
-    if not job.dopamine:
-        return None
-    videos = list((ROOT / CONFIG["paths"]["assets"] / "dopamine").glob("*.mp4"))
-    if not videos:
-        job.add_log("Modo dopamina ligado, mas assets/dopamine/ está vazio — shorts normais")
-        return None
-    return random.choice(videos)
+def _pick_asset(folder: str) -> Path | None:
+    base = ROOT / CONFIG["paths"]["assets"] / folder
+    videos = list(base.glob("*.mp4")) + list(base.glob("*.gif"))
+    return random.choice(videos) if videos else None
 
 
 def _render_short(job: Job, src: Path, out_root: Path, i: int, cut: dict, transcript: dict) -> dict:
     folder = out_root / "shorts" / f"{i:02d} - {_safe(cut['title'])}"
     folder.mkdir(parents=True, exist_ok=True)
 
-    ass = captions.build_ass(transcript["words"], cut["start"], cut["end"], folder / "legenda.ass")
-    bg = _pick_dopamine(job)
-    clip = editor.render_short(src, cut["start"], cut["end"], ass, folder / "video.mp4", bg=bg)
-    extra = f" + gameplay {bg.stem}" if bg else ""
+    bg = overlay = None
+    if job.dopamine:
+        bg = _pick_asset("dopamine")
+        if not bg:
+            job.add_log("Modo dopamina ligado, mas assets/dopamine/ está vazio — shorts normais")
+    if not bg:
+        overlay = _pick_asset("overlay")
+
+    ass = captions.build_ass(
+        transcript["words"], cut["start"], cut["end"], folder / "legenda.ass",
+        margin_v=820 if bg else 620,
+    )
+    clip = editor.render_short(
+        src, cut["start"], cut["end"], ass, folder / "video.mp4", bg=bg, overlay=overlay
+    )
+    extra = f" + gameplay {bg.stem}" if bg else (f" + fundo {overlay.stem}" if overlay else "")
     job.add_log(f"Short {i} renderizado ({cut['end'] - cut['start']:.0f}s){extra}")
 
     return _clip_meta(cut, folder, {"video": _rel(clip), "kind": "short"})
