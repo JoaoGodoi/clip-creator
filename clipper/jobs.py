@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import random
 import re
 import threading
 import time
@@ -11,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import captions, downloader, editor, highlights, thumbnails, transcriber
-from .config import CONFIG, path_for
+from .config import CONFIG, ROOT, path_for
 
 
 @dataclass
@@ -26,6 +27,7 @@ class Job:
     results: dict = field(default_factory=lambda: {"long": [], "shorts": []})
     error: str = ""
     mock: bool = False
+    dopamine: bool = False
     output_dir: str = ""
 
     def add_log(self, msg: str) -> None:
@@ -43,8 +45,9 @@ class Job:
 JOBS: dict[str, Job] = {}
 
 
-def start_job(video_url: str, video_title: str) -> str:
-    job = Job(id=uuid.uuid4().hex[:8], video_url=video_url, video_title=video_title)
+def start_job(video_url: str, video_title: str, dopamine: bool = False) -> str:
+    job = Job(id=uuid.uuid4().hex[:8], video_url=video_url, video_title=video_title,
+              dopamine=dopamine)
     JOBS[job.id] = job
     threading.Thread(target=_pipeline, args=(job,), daemon=True).start()
     return job.id
@@ -168,12 +171,24 @@ def _render_long(job: Job, src: Path, out_root: Path, i: int, cut: dict, transcr
     })
 
 
+def _pick_dopamine(job: Job) -> Path | None:
+    if not job.dopamine:
+        return None
+    videos = list((ROOT / CONFIG["paths"]["assets"] / "dopamine").glob("*.mp4"))
+    if not videos:
+        job.add_log("Modo dopamina ligado, mas assets/dopamine/ está vazio — shorts normais")
+        return None
+    return random.choice(videos)
+
+
 def _render_short(job: Job, src: Path, out_root: Path, i: int, cut: dict, transcript: dict) -> dict:
     folder = out_root / "shorts" / f"{i:02d} - {_safe(cut['title'])}"
     folder.mkdir(parents=True, exist_ok=True)
 
     ass = captions.build_ass(transcript["words"], cut["start"], cut["end"], folder / "legenda.ass")
-    clip = editor.render_short(src, cut["start"], cut["end"], ass, folder / "video.mp4")
-    job.add_log(f"Short {i} renderizado ({cut['end'] - cut['start']:.0f}s)")
+    bg = _pick_dopamine(job)
+    clip = editor.render_short(src, cut["start"], cut["end"], ass, folder / "video.mp4", bg=bg)
+    extra = f" + gameplay {bg.stem}" if bg else ""
+    job.add_log(f"Short {i} renderizado ({cut['end'] - cut['start']:.0f}s){extra}")
 
     return _clip_meta(cut, folder, {"video": _rel(clip), "kind": "short"})

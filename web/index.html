@@ -16,6 +16,7 @@
 
   header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }
   h1 { font-size: 1.5rem; } h1 span { color: var(--accent); }
+  h2 { font-size: 1.05rem; }
   .chips { display: flex; gap: 8px; flex-wrap: wrap; }
   .chip { font-size: .75rem; padding: 4px 10px; border-radius: 20px; background: var(--bg3); border: 1px solid var(--border); color: var(--muted); }
   .chip.ok { color: var(--green); border-color: var(--green); }
@@ -29,7 +30,10 @@
   button:hover { filter: brightness(1.15); }
   button:disabled { opacity: .5; cursor: default; }
   button.ghost { background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; font-weight: 500; }
-  .hint { color: var(--muted); font-size: .8rem; margin-top: 10px; }
+  button.danger { background: transparent; border: 1px solid var(--red); color: var(--red); padding: 8px 14px; font-weight: 500; }
+  .hint { color: var(--muted); font-size: .8rem; }
+  .options-line { margin-top: 12px; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .85rem; flex-wrap: wrap; user-select: none; }
+  .options-line input { accent-color: var(--accent); width: 16px; height: 16px; }
   .error { color: var(--red); margin-top: 10px; font-size: .85rem; white-space: pre-wrap; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; margin-top: 18px; }
@@ -44,7 +48,7 @@
   .job h3 { font-size: 1rem; margin-bottom: 4px; }
   .job .stage { color: var(--muted); font-size: .85rem; margin-bottom: 10px; }
   .bar { height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
-  .bar div { height: 100%; background: linear-gradient(90deg, var(--accent), #a78bfa); transition: width .5s; }
+  .bar div { height: 100%; background: linear-gradient(90deg, var(--accent), #a78bfa); transition: width .5s; width: 0; }
   .job.done { border-left-color: var(--green); }
   .job.err { border-left-color: var(--red); }
   .log { background: #0a0c10; border-radius: 8px; padding: 10px 14px; margin-top: 12px; font-family: Consolas, monospace; font-size: .75rem; color: var(--muted); max-height: 180px; overflow-y: auto; white-space: pre-wrap; display: none; }
@@ -62,6 +66,14 @@
   .clip .meta .dur { color: var(--muted); font-size: .78rem; margin-bottom: 8px; }
   .clip img.thumb { width: 160px; border-radius: 8px; align-self: flex-start; }
   .badge-mock { background: var(--yellow); color: #000; font-size: .7rem; padding: 2px 8px; border-radius: 10px; font-weight: 700; margin-left: 8px; }
+
+  .storage-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .file-row { display: flex; align-items: center; gap: 12px; padding: 9px 6px; border-bottom: 1px solid var(--border); font-size: .85rem; }
+  .file-row:last-child { border-bottom: none; }
+  .file-row .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-row .fsize { color: var(--muted); white-space: nowrap; }
+  .file-row button { padding: 5px 12px; font-size: .78rem; }
+  .storage-empty { color: var(--muted); font-size: .85rem; padding: 12px 4px; }
 </style>
 </head>
 <body>
@@ -76,12 +88,28 @@
       <input type="text" id="channelUrl" placeholder="Cole a URL do canal (ex: https://www.youtube.com/@canal)">
       <button id="btnList" onclick="listChannel()">Buscar vídeos</button>
     </div>
-    <div class="hint">Escolha um vídeo da lista para gerar os cortes longos (10–12 min) e os shorts/reels com legenda.</div>
+    <label class="options-line">
+      <input type="checkbox" id="dopamineChk">
+      🧠 Modo dopamina — gameplay em loop na parte de baixo dos shorts
+      <span class="hint" id="dopamineHint"></span>
+    </label>
+    <div class="hint" style="margin-top:8px">Escolha um vídeo da lista para gerar os cortes longos (10–12 min) e os shorts/reels com legenda.</div>
     <div class="error" id="channelError"></div>
     <div class="grid" id="videoGrid"></div>
   </div>
 
   <div id="jobsArea"></div>
+
+  <div class="card">
+    <div class="storage-head">
+      <h2>💾 Arquivos no disco <span class="hint" id="storageTotal"></span></h2>
+      <div style="display:flex;gap:8px">
+        <button class="ghost" onclick="loadStorage()">Atualizar</button>
+        <button class="danger" onclick="deleteAll()">Apagar tudo</button>
+      </div>
+    </div>
+    <div id="storageList"><div class="storage-empty">Carregando…</div></div>
+  </div>
 </div>
 
 <script>
@@ -96,6 +124,12 @@ async function api(path, body) {
   return data;
 }
 
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Status ──────────────────────────────────────────────────────────────────
+
 async function loadHealth() {
   try {
     const h = await api('/api/health');
@@ -107,8 +141,13 @@ async function loadHealth() {
       chip(h.intro, '✓ intro.mp4', '– sem intro') +
       chip(h.outro, '✓ outro.mp4', '– sem ending') +
       `<span class="chip">whisper: ${h.whisper_model}</span>`;
+    $('dopamineHint').textContent = h.dopamine_videos > 0
+      ? `(${h.dopamine_videos} vídeo(s) de fundo)`
+      : '(coloque arquivos .mp4 em assets/dopamine/)';
   } catch { /* servidor iniciando */ }
 }
+
+// ── Canal ───────────────────────────────────────────────────────────────────
 
 async function listChannel() {
   const url = $('channelUrl').value.trim();
@@ -137,15 +176,91 @@ async function listChannel() {
 async function startJob(url, title) {
   if (!confirm(`Gerar cortes de:\n\n${title}\n\nIsso baixa e processa o vídeo inteiro (pode levar vários minutos).`)) return;
   try {
-    await api('/api/jobs', { url, title });
+    await api('/api/jobs', { url, title, dopamine: $('dopamineChk').checked });
     refreshJobs();
     if (!polling) polling = setInterval(refreshJobs, 1500);
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   } catch (e) { alert(e.message); }
 }
 
-function esc(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// ── Jobs (atualização incremental — nada de redesenhar o card) ──────────────
+
+function ensureJobCard(j) {
+  let card = $('job-' + j.id);
+  if (card) return card;
+  card = document.createElement('div');
+  card.className = 'card job';
+  card.id = 'job-' + j.id;
+  card.innerHTML = `
+    <h3>${esc(j.video_title)} <span class="badge-mock" style="display:none">MOCK — sem LLM</span></h3>
+    <div class="stage"></div>
+    <div class="bar"><div></div></div>
+    <div class="error"></div>
+    <div class="job-actions">
+      <button class="ghost" onclick="toggleLog('${j.id}')">Ver log</button>
+      <button class="ghost btn-open" style="display:none">Abrir pasta</button>
+    </div>
+    <div class="log" id="log-${j.id}"></div>
+    <div class="results" id="res-${j.id}"></div>`;
+  $('jobsArea').prepend(card);
+  return card;
+}
+
+const jobStatusSeen = {};
+
+function updateJob(j) {
+  const card = ensureJobCard(j);
+  card.classList.toggle('done', j.status === 'concluído');
+  card.classList.toggle('err', j.status === 'erro');
+  card.querySelector('.badge-mock').style.display = j.mock ? '' : 'none';
+
+  const stage = `${j.stage} — ${j.status} (${j.progress}%)`;
+  const stageEl = card.querySelector('.stage');
+  if (stageEl.textContent !== stage) stageEl.textContent = stage;
+  card.querySelector('.bar div').style.width = j.progress + '%';
+  card.querySelector('.error').textContent = j.error || '';
+
+  const log = $('log-' + j.id);
+  const logText = j.log.join('\n');
+  if (log.textContent !== logText) {
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 30;
+    log.textContent = logText;
+    if (atBottom) log.scrollTop = log.scrollHeight;
+  }
+
+  const btnOpen = card.querySelector('.btn-open');
+  if (j.output_dir && btnOpen.style.display === 'none') {
+    btnOpen.style.display = '';
+    btnOpen.onclick = () => openFolder(j.output_dir);
+  }
+
+  appendResults(j);
+
+  const finished = j.status === 'concluído' || j.status === 'erro';
+  if (finished && jobStatusSeen[j.id] !== j.status) loadStorage();
+  jobStatusSeen[j.id] = j.status;
+}
+
+function appendResults(j) {
+  const res = $('res-' + j.id);
+  for (const kind of ['long', 'shorts']) {
+    const items = j.results[kind];
+    if (!items.length) continue;
+    let sec = res.querySelector('.sec-' + kind);
+    if (!sec) {
+      sec = document.createElement('div');
+      sec.className = 'sec-' + kind;
+      sec.innerHTML = '<h4></h4><div class="list"></div>';
+      kind === 'long' ? res.prepend(sec) : res.append(sec);
+    }
+    sec.querySelector('h4').textContent = kind === 'long'
+      ? `🎥 Cortes longos (${items.length})` : `📱 Shorts / Reels (${items.length})`;
+    const list = sec.querySelector('.list');
+    for (let i = list.children.length; i < items.length; i++) {
+      const holder = document.createElement('div');
+      holder.innerHTML = clipCard(items[i]);
+      list.append(holder.firstElementChild);
+    }
+  }
 }
 
 function clipCard(c) {
@@ -181,37 +296,51 @@ function toggleLog(id) { $('log-' + id).classList.toggle('show'); }
 async function refreshJobs() {
   const data = await api('/api/jobs').catch(() => null);
   if (!data) return;
+  data.jobs.forEach(updateJob);
   const active = data.jobs.some(j => j.status === 'rodando' || j.status === 'na fila');
   if (!active && polling) { clearInterval(polling); polling = null; }
-
-  $('jobsArea').innerHTML = data.jobs.slice().reverse().map(j => {
-    const cls = j.status === 'concluído' ? 'done' : j.status === 'erro' ? 'err' : '';
-    const results = (j.results.long.length || j.results.shorts.length) ? `
-      <div class="results">
-        ${j.results.long.length ? `<h4>🎥 Cortes longos (${j.results.long.length})</h4>` + j.results.long.map(clipCard).join('') : ''}
-        ${j.results.shorts.length ? `<h4>📱 Shorts / Reels (${j.results.shorts.length})</h4>` + j.results.shorts.map(clipCard).join('') : ''}
-      </div>` : '';
-    return `
-      <div class="card job ${cls}">
-        <h3>${esc(j.video_title)} ${j.mock ? '<span class="badge-mock">MOCK — sem API key</span>' : ''}</h3>
-        <div class="stage">${esc(j.stage)} — ${j.status} (${j.progress}%)</div>
-        <div class="bar"><div style="width:${j.progress}%"></div></div>
-        ${j.error ? `<div class="error">${esc(j.error)}</div>` : ''}
-        <div class="job-actions">
-          <button class="ghost" onclick="toggleLog('${j.id}')">Ver log</button>
-          ${j.output_dir ? `<button class="ghost" onclick='openFolder(${JSON.stringify(j.output_dir)})'>Abrir pasta</button>` : ''}
-        </div>
-        <div class="log" id="log-${j.id}">${j.log.map(esc).join('\n')}</div>
-        ${results}
-      </div>`;
-  }).join('');
+  if (active && !polling) polling = setInterval(refreshJobs, 1500);
 }
 
+// ── Arquivos no disco ───────────────────────────────────────────────────────
+
+async function loadStorage() {
+  try {
+    const data = await api('/api/storage');
+    $('storageTotal').textContent = data.items.length
+      ? `— ${(data.total_mb / 1000).toFixed(2)} GB no total` : '';
+    if (!data.items.length) {
+      $('storageList').innerHTML = '<div class="storage-empty">Nada no disco — downloads e cortes aparecem aqui.</div>';
+      return;
+    }
+    $('storageList').innerHTML = data.items.map(it => `
+      <div class="file-row">
+        <span>${it.type === 'download' ? '⬇️' : '🎬'}</span>
+        <span class="fname" title="${esc(it.path)}">${esc(it.name)}</span>
+        <span class="fsize">${it.size_mb >= 1000 ? (it.size_mb / 1000).toFixed(2) + ' GB' : it.size_mb + ' MB'}</span>
+        <button class="danger" onclick='deleteItem(${JSON.stringify(it.path)}, ${JSON.stringify(it.name)})'>Apagar</button>
+      </div>`).join('');
+  } catch { /* servidor iniciando */ }
+}
+
+async function deleteItem(path, name) {
+  if (!confirm(`Apagar "${name}"?\n\nIsso remove o arquivo do disco (a transcrição em cache é mantida).`)) return;
+  try { await api('/api/delete', { url: path }); loadStorage(); } catch (e) { alert(e.message); }
+}
+
+async function deleteAll() {
+  if (!confirm('Apagar TODOS os vídeos baixados e TODOS os cortes gerados?\n\nAs transcrições em cache são mantidas (re-processar fica rápido).')) return;
+  try { await api('/api/delete_all'); loadStorage(); } catch (e) { alert(e.message); }
+}
+
+// ── Init ────────────────────────────────────────────────────────────────────
+
+$('dopamineChk').checked = localStorage.getItem('dopamine') === '1';
+$('dopamineChk').onchange = () => localStorage.setItem('dopamine', $('dopamineChk').checked ? '1' : '0');
+
 loadHealth();
-refreshJobs().then(() => {
-  const hasActive = document.querySelector('.job:not(.done):not(.err)');
-  if (hasActive && !polling) polling = setInterval(refreshJobs, 1500);
-});
+loadStorage();
+refreshJobs();
 </script>
 </body>
 </html>

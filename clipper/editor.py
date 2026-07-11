@@ -74,13 +74,40 @@ def render_long(src: Path, start: float, end: float, out: Path) -> Path:
     return out
 
 
-def render_short(src: Path, start: float, end: float, ass_file: Path | None, out: Path) -> Path:
-    vf = "crop=ih*9/16:ih,scale=1080:1920,fps=30,format=yuv420p"
+def render_short(
+    src: Path,
+    start: float,
+    end: float,
+    ass_file: Path | None,
+    out: Path,
+    bg: Path | None = None,
+) -> Path:
+    """Short 9:16. Com `bg` (modo dopamina), o vídeo principal ocupa os 60% de
+    cima e o gameplay em loop (sem áudio) os 40% de baixo."""
+    if not bg:
+        vf = "crop=ih*9/16:ih,scale=1080:1920,fps=30,format=yuv420p"
+        if ass_file:
+            vf += f",ass='{_filter_path(ass_file)}'"
+        _run([
+            "-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", str(src),
+            "-vf", vf, *_enc(), str(out),
+        ])
+        return out
+
+    top_h, bot_h = 1152, 768  # 60% / 40% de 1920
+    stack = "vstack,format=yuv420p"
     if ass_file:
-        vf += f",ass='{_filter_path(ass_file)}'"
+        stack += f",ass='{_filter_path(ass_file)}'"
+    fc = (
+        f"[0:v]crop=ih*{1080 / top_h:.6f}:ih,scale=1080:{top_h},fps=30[top];"
+        f"[1:v]crop=ih*{1080 / bot_h:.6f}:ih,scale=1080:{bot_h},fps=30[bot];"
+        f"[top][bot]{stack}[v]"
+    )
     _run([
         "-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", str(src),
-        "-vf", vf, *_enc(), str(out),
+        "-stream_loop", "-1", "-i", str(bg),
+        "-filter_complex", fc, "-map", "[v]", "-map", "0:a", "-shortest",
+        *_enc(), str(out),
     ])
     return out
 

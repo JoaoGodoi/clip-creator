@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -22,6 +23,7 @@ class ChannelReq(BaseModel):
 class JobReq(BaseModel):
     url: str
     title: str
+    dopamine: bool = False
 
 
 def _llm_status() -> tuple[bool, str]:
@@ -48,6 +50,7 @@ def _llm_status() -> tuple[bool, str]:
 @app.get("/api/health")
 def health() -> dict:
     llm_ok, llm_detail = _llm_status()
+    dopamine_dir = ROOT / CONFIG["paths"]["assets"] / "dopamine"
     return {
         "ffmpeg": bool(FFMPEG),
         "llm_ok": llm_ok,
@@ -55,7 +58,64 @@ def health() -> dict:
         "intro": (ROOT / CONFIG["paths"]["assets"] / "intro.mp4").exists(),
         "outro": (ROOT / CONFIG["paths"]["assets"] / "outro.mp4").exists(),
         "whisper_model": CONFIG["whisper"]["model"],
+        "dopamine_videos": len(list(dopamine_dir.glob("*.mp4"))) if dopamine_dir.exists() else 0,
     }
+
+
+# ── Arquivos gerados (listar/apagar) ─────────────────────────────────────────
+
+def _dir_size(p: Path) -> int:
+    return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+
+
+@app.get("/api/storage")
+def storage() -> dict:
+    items = []
+    downloads = path_for("downloads")
+    for f in sorted(downloads.glob("*.mp4")):
+        size = f.stat().st_size
+        items.append({
+            "type": "download", "name": f.name, "path": str(f),
+            "size_mb": round(size / 1e6, 1),
+        })
+    for d in sorted(path_for("output").iterdir()):
+        if d.is_dir():
+            items.append({
+                "type": "output", "name": d.name, "path": str(d),
+                "size_mb": round(_dir_size(d) / 1e6, 1),
+            })
+    return {"items": items, "total_mb": round(sum(i["size_mb"] for i in items), 1)}
+
+
+def _safe_target(raw: str) -> Path:
+    target = Path(raw).resolve()
+    roots = [path_for("downloads").resolve(), path_for("output").resolve()]
+    if not any(target != root and target.is_relative_to(root) for root in roots):
+        raise HTTPException(400, "Caminho fora das pastas do app")
+    if not target.exists():
+        raise HTTPException(404, "Arquivo não existe")
+    return target
+
+
+@app.post("/api/delete")
+def delete_item(req: ChannelReq) -> dict:
+    target = _safe_target(req.url)
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+    return {"ok": True}
+
+
+@app.post("/api/delete_all")
+def delete_all() -> dict:
+    """Apaga todos os vídeos baixados e todos os cortes gerados (mantém transcrições)."""
+    for f in path_for("downloads").glob("*.mp4"):
+        f.unlink()
+    for d in path_for("output").iterdir():
+        if d.is_dir():
+            shutil.rmtree(d)
+    return {"ok": True}
 
 
 @app.post("/api/channel")
@@ -70,7 +130,7 @@ def get_channel(req: ChannelReq) -> dict:
 def create_job(req: JobReq) -> dict:
     if not FFMPEG:
         raise HTTPException(500, "ffmpeg não encontrado — instale e reinicie o app")
-    return {"job_id": jobs.start_job(req.url, req.title)}
+    return {"job_id": jobs.start_job(req.url, req.title, dopamine=req.dopamine)}
 
 
 @app.get("/api/jobs")
