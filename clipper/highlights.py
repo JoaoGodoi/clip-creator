@@ -20,6 +20,8 @@ from .config import CONFIG
 RULES = """Regras obrigatórias:
 - Use APENAS timestamps que existem na transcrição.
 - O corte deve começar no início de uma fala e terminar no fim de uma ideia.
+- Marque o TRECHO COMPLETO do momento (contexto + clímax + desfecho), NUNCA apenas \
+a frase de impacto. Respeite a duração mínima pedida — cortes curtos demais são descartados.
 - NUNCA tire uma fala de contexto de forma que distorça o que a pessoa disse.
 - Títulos chamativos mas fiéis ao conteúdo (sem clickbait mentiroso), em português.
 - description: 2-3 frases sobre o trecho, em português.
@@ -88,6 +90,54 @@ def _parse_ts(ts: str) -> float:
 def _snap(t: float, boundaries: list[float]) -> float:
     """Ajusta t para o limite de segmento mais próximo (corte limpo)."""
     return min(boundaries, key=lambda b: abs(b - t)) if boundaries else t
+
+
+def _fit_duration(
+    start: float,
+    end: float,
+    segments: list[dict],
+    dur_min: float,
+    dur_max: float,
+) -> tuple[float, float]:
+    """Expande/encolhe o corte para caber em [dur_min, dur_max].
+
+    LLMs (especialmente locais) tendem a marcar só a frase de impacto. O trecho
+    marcado vira a âncora: estende para frente fala a fala até a duração alvo,
+    preferindo parar em fim de frase; se faltar vídeo, estende para trás.
+    """
+    target = (dur_min + dur_max) / 2
+
+    def ends_sentence(seg: dict) -> bool:
+        return bool(seg["text"]) and seg["text"][-1] in ".!?…"
+
+    if end - start < dur_min:
+        for seg in segments:
+            if seg["end"] <= end + 0.1:
+                continue
+            if seg["end"] - start > dur_max:
+                break
+            end = seg["end"]
+            if end - start >= target or (end - start >= dur_min and ends_sentence(seg)):
+                break
+        if end - start < dur_min:
+            for seg in reversed(segments):
+                if seg["start"] >= start - 0.1:
+                    continue
+                if end - seg["start"] > dur_max:
+                    break
+                start = seg["start"]
+                if end - start >= dur_min:
+                    break
+
+    if end - start > dur_max:
+        best = start + dur_max
+        for seg in reversed(segments):
+            if start + 1 < seg["end"] <= start + dur_max:
+                best = seg["end"]
+                break
+        end = best
+
+    return start, end
 
 
 # ── Entrada principal ────────────────────────────────────────────────────────
@@ -201,11 +251,11 @@ def _rank_candidates(candidates: dict, transcript: dict, video_url: str, log) ->
     ends = [s["end"] for s in transcript["segments"]]
 
     limits = {
-        "long": (cuts_cfg["long"]["min_minutes"] * 60 * 0.8,
-                 cuts_cfg["long"]["max_minutes"] * 60 * 1.25,
+        "long": (cuts_cfg["long"]["min_minutes"] * 60,
+                 cuts_cfg["long"]["max_minutes"] * 60,
                  cuts_cfg["long"]["count"]),
-        "shorts": (cuts_cfg["shorts"]["min_seconds"] * 0.8,
-                   cuts_cfg["shorts"]["max_seconds"] * 1.4,
+        "shorts": (cuts_cfg["shorts"]["min_seconds"],
+                   cuts_cfg["shorts"]["max_seconds"],
                    cuts_cfg["shorts"]["count"]),
     }
 
@@ -218,8 +268,13 @@ def _rank_candidates(candidates: dict, transcript: dict, video_url: str, log) ->
                 end = _snap(_parse_ts(item["end_ts"]), ends)
             except (KeyError, ValueError):
                 continue
+            if end <= start - 1 or start > duration:
+                continue
+            start, end = _fit_duration(
+                start, max(end, start), transcript["segments"], dur_min, dur_max
+            )
             length = end - start
-            if length < dur_min or length > dur_max or end > duration + 5:
+            if length < dur_min * 0.8 or length > dur_max * 1.25 or end > duration + 5:
                 continue
             valid.append(
                 {
