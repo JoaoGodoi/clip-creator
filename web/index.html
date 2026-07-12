@@ -68,7 +68,9 @@
   .badge-mock { background: var(--yellow); color: #000; font-size: .7rem; padding: 2px 8px; border-radius: 10px; font-weight: 700; margin-left: 8px; }
 
   .storage-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .file-row { display: flex; align-items: center; gap: 12px; padding: 9px 6px; border-bottom: 1px solid var(--border); font-size: .85rem; }
+  .file-row { display: flex; align-items: center; gap: 12px; padding: 9px 6px; border-bottom: 1px solid var(--border); font-size: .85rem; flex-wrap: wrap; }
+  .kit { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .kit button { padding: 5px 10px; font-size: .76rem; }
   .file-row:last-child { border-bottom: none; }
   .file-row .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .file-row .fsize { color: var(--muted); white-space: nowrap; }
@@ -282,19 +284,9 @@ function clipCard(c) {
         <strong>${esc(c.title)}</strong>
         <div class="dur">${isLong ? (c.duration / 60).toFixed(1) + ' min' : c.duration.toFixed(0) + 's'}</div>
         <textarea readonly>${esc(c.description)}</textarea>
-        <div class="job-actions">
-          <button class="ghost" onclick="copyDesc(this)">Copiar descrição</button>
-          ${uploadControl(c.folder, c.youtube_url)}
-        </div>
+        <div class="job-actions">${manualKit(c)}</div>
       </div>
     </div>`;
-}
-
-function copyDesc(btn) {
-  const ta = btn.closest('.meta').querySelector('textarea');
-  navigator.clipboard.writeText(ta.value);
-  btn.textContent = 'Copiado ✓';
-  setTimeout(() => btn.textContent = 'Copiar descrição', 1500);
 }
 
 async function openFolder(path) {
@@ -315,13 +307,15 @@ async function refreshJobs() {
 // ── YouTube: conexão e uploads ──────────────────────────────────────────────
 
 let authPoll = null;
+let YT = { configured: false, connected: false };
 
 async function loadAuth() {
   const box = $('authBox');
   try {
     const s = await api('/api/auth/status');
+    YT = s;
     if (!s.configured) {
-      box.innerHTML = '<span class="chip warn">⚠ YouTube: falta client_secret.json (ver GOOGLE_SETUP.md)</span>';
+      box.innerHTML = '';  // upload manual: OAuth só aparece se client_secret.json existir
     } else if (!s.connected) {
       box.innerHTML = '<button onclick="connectYT()">🔗 Conectar YouTube</button>';
     } else {
@@ -352,8 +346,29 @@ function uploadControl(folder, youtubeUrl) {
     return `<a class="chip ok" style="text-decoration:none" data-folder="${esc(folder)}"
       href="${esc(youtubeUrl)}" target="_blank">▶ no YouTube</a>`;
   }
+  if (!YT.connected) return '';  // upload manual: sem OAuth não mostra o botão
   return `<button class="ghost btn-upload" data-folder="${esc(folder)}"
     onclick='uploadClip(this)'>⬆ Enviar ao YouTube</button>`;
+}
+
+const CLIPDATA = {};  // folder → {title, description, hashtags} para os botões de copiar
+
+function manualKit(c) {
+  CLIPDATA[c.folder] = { title: c.title, description: c.description, hashtags: c.hashtags || [] };
+  const f = JSON.stringify(c.folder);
+  return `
+    <button class="ghost" onclick='openFolder(${f})'>📂 Pasta</button>
+    <button class="ghost" onclick='copyText(CLIPDATA[${f}].title, this)'>📋 Título</button>
+    <button class="ghost" onclick='copyText(CLIPDATA[${f}].description, this)'>📝 Descrição</button>
+    <button class="ghost" onclick='copyText(CLIPDATA[${f}].hashtags.map(t => t.replace("#", "")).join(", "), this)'>🏷 Tags</button>
+    ${uploadControl(c.folder, c.youtube_url)}`;
+}
+
+function copyText(text, btn) {
+  navigator.clipboard.writeText(text || '');
+  const original = btn.textContent;
+  btn.textContent = 'Copiado ✓';
+  setTimeout(() => btn.textContent = original, 1200);
 }
 
 let uploadsPoll = null;
@@ -411,9 +426,10 @@ async function loadLibrary() {
         <span>${c.kind === 'long' ? '🎥' : '📱'}</span>
         <span class="fname" title="${esc(c.episode)}">
           <a href="/files/${encodeURI(c.video)}" target="_blank" style="color:inherit">${esc(c.title)}</a>
+          ${c.thumbnail ? ' <span class="hint">🖼 thumb na pasta</span>' : ''}
         </span>
         <span class="fsize">${c.kind === 'long' ? (c.duration / 60).toFixed(1) + ' min' : c.duration.toFixed(0) + 's'}</span>
-        ${uploadControl(c.folder, c.youtube_url)}
+        <div class="kit">${manualKit(c)}</div>
       </div>`).join('');
   } catch { /* servidor iniciando */ }
 }

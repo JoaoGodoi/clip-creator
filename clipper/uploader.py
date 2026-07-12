@@ -203,8 +203,11 @@ def library() -> list[dict]:
             "episode": folder.parent.parent.name,
             "kind": meta.get("kind", "short"),
             "title": meta.get("title", folder.name),
+            "description": meta.get("description", ""),
+            "hashtags": meta.get("hashtags", []),
             "duration": meta.get("duration", 0),
             "video": str((folder / "video.mp4").relative_to(out_root)).replace("\\", "/"),
+            "thumbnail": (folder / "thumbnail.jpg").exists(),
             "youtube_url": meta.get("youtube_url"),
         })
     return clips
