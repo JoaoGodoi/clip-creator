@@ -5,7 +5,10 @@
 """
 from __future__ import annotations
 
+import json
+import random
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 from .config import CONFIG, FFMPEG, ROOT
@@ -80,6 +83,32 @@ def _cover(w: int, h: int) -> str:
             f"force_divisible_by=2,crop={w}:{h}")
 
 
+@lru_cache(maxsize=64)
+def _duration(path: str) -> float:
+    ffprobe = str(Path(FFMPEG).parent / "ffprobe.exe")
+    proc = subprocess.run(
+        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "json", path],
+        capture_output=True, text=True,
+    )
+    try:
+        return float(json.loads(proc.stdout)["format"]["duration"])
+    except (KeyError, ValueError, json.JSONDecodeError):
+        return 0.0
+
+
+def _loop_input(path: Path, clip_len: float) -> list[str]:
+    """Input de fundo em loop, começando num ponto aleatório do vídeo.
+
+    Se o fundo for longo o bastante, sorteia um início que caiba o corte
+    inteiro (cada short fica diferente); se for curto, entra em loop do zero.
+    """
+    dur = _duration(str(path))
+    if dur > clip_len + 2:
+        offset = random.uniform(0, dur - clip_len - 1)
+        return ["-ss", f"{offset:.2f}", "-i", str(path)]
+    return ["-stream_loop", "-1", "-i", str(path)]
+
+
 def render_short(
     src: Path,
     start: float,
@@ -112,7 +141,7 @@ def render_short(
         )
         _run([
             "-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", str(src),
-            "-stream_loop", "-1", "-i", str(bg),
+            *_loop_input(bg, end - start),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a", "-shortest",
             *_enc(), str(out),
         ])
@@ -126,7 +155,7 @@ def render_short(
         )
         _run([
             "-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", str(src),
-            "-stream_loop", "-1", "-i", str(overlay),
+            *_loop_input(overlay, end - start),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a", "-shortest",
             *_enc(), str(out),
         ])
