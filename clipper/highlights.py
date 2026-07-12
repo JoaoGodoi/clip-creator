@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import unicodedata
 from typing import Callable
 
 import requests
@@ -23,13 +24,53 @@ RULES = """Regras obrigatórias:
 - Marque o TRECHO COMPLETO do momento (contexto + clímax + desfecho), NUNCA apenas \
 a frase de impacto. Respeite a duração mínima pedida — cortes curtos demais são descartados.
 - NUNCA tire uma fala de contexto de forma que distorça o que a pessoa disse.
-- Títulos chamativos mas fiéis ao conteúdo (sem clickbait mentiroso), em português.
-- description: 2-3 frases sobre o trecho, em português.
-- thumb_text: frase de impacto de no máximo 6 palavras para a thumbnail.
-- score: 0 a 10. Seja rigoroso — 8+ só para momentos realmente fortes."""
+- NÃO escolha: agradecimentos, recados e publicidade, apresentação de convidado, \
+transições ("agora vamos falar de..."), conversa administrativa do programa, meio de \
+explicação sem conclusão, nem trechos que só fazem sentido com contexto anterior.
+- hook_quote: copie EXATAMENTE as primeiras palavras faladas do corte (6 a 15 palavras), \
+letra por letra como aparecem na transcrição. Corte cujo hook_quote não existir na \
+transcrição será descartado automaticamente.
+- title: fórmula de gancho em até 60 caracteres — pergunta direta, afirmação polêmica, \
+"Fulano revela...", número ("3 erros que..."). Inclua o NOME da pessoa que fala se for \
+identificável. Fiel ao conteúdo (sem clickbait mentiroso), em português.
+- description: a PRIMEIRA linha repete o gancho com palavras-chave de busca (nome do \
+convidado + tema); depois 1-2 frases sobre o trecho. Em português.
+- hashtags: EXATAMENTE 3 a 5 — "#shorts" primeiro (em shorts), depois 1-2 amplas do \
+nicho (ex: #podcast, #cortes) e 1-2 específicas do tema/convidado.
+- seo_tags: 8 a 12 palavras-chave de busca (sem #), da mais específica à mais ampla: \
+nome de quem fala, tema exato, assunto geral, nome do podcast, variações que alguém digitaria.
+- thumb_text: frase de impacto de no máximo 6 palavras (vira headline na tela e thumbnail).
+- score: 0 a 10. Seja rigoroso — 8+ só para momentos realmente fortes.
+- QUALIDADE acima de quantidade: se o trecho for morno, retorne menos candidatos ou nenhum."""
 
-ITEM_FMT = """{{"start_ts": "HH:MM:SS", "end_ts": "HH:MM:SS", "title": "...", "description": "...",
-  "hashtags": ["#..."], "thumb_text": "...", "score": 0.0}}"""
+ITEM_FMT = """{{"start_ts": "HH:MM:SS", "end_ts": "HH:MM:SS", "hook_quote": "...",
+  "title": "...", "description": "...", "hashtags": ["#..."], "seo_tags": ["..."],
+  "thumb_text": "...", "score": 0.0}}"""
+
+PROMPT_JUDGE = """Você é o editor-chefe de um canal de cortes de podcast. Abaixo está a \
+lista de cortes CANDIDATOS que sua equipe propôs para o episódio "{video_title}" do \
+podcast {podcast}.
+
+Sua tarefa: escolher APENAS os melhores, comparando-os entre si. Seja implacável — \
+postar corte fraco afunda o canal.
+
+O que faz um corte forte:
+- Gancho: a primeira frase prende em 3 segundos (pergunta forte, polêmica, começo de \
+história, punchline chegando).
+- Autocontido: entende-se sem ter visto o resto do episódio.
+- Pico real: humor, tensão, revelação ou insight — NÃO conversa administrativa, \
+agradecimento, divagação ou explicação morna.
+
+Selecione no máximo {n_shorts} shorts e {n_long} cortes longos. Candidato fraco não \
+entra — poucos cortes bons valem mais que muitos medianos. Dê a nota final de 0 a 10 \
+comparando os candidatos entre si; reserve 8+ para os realmente excepcionais.
+
+Responda SOMENTE com JSON:
+{{"selected": [{{"id": 0, "score": 0.0}}]}}
+
+CANDIDATOS:
+{candidates}
+"""
 
 PROMPT_FULL = """Você é um editor de cortes de podcast experiente. Abaixo está a transcrição \
 de um episódio, com o timestamp de início de cada fala.
@@ -83,6 +124,46 @@ def _parse_ts(ts: str) -> float:
 def _snap(t: float, boundaries: list[float]) -> float:
     """Ajusta t para o limite de segmento mais próximo (corte limpo)."""
     return min(boundaries, key=lambda b: abs(b - t)) if boundaries else t
+
+
+def _norm(text: str) -> str:
+    text = unicodedata.normalize("NFD", text.lower())
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _locate_quote(quote: str, segments: list[dict], seg_norms: list[str]) -> float | None:
+    """Acha o início da fala cujo texto contém a citação. None = citação inventada.
+
+    O modelo é ruim de aritmética de timestamp mas bom de copiar texto — a
+    citação de abertura vira a âncora real do corte.
+    """
+    q = _norm(quote)
+    if len(q) < 8:
+        return None
+    for i in range(len(seg_norms)):
+        joined = seg_norms[i]
+        if q in joined:
+            return segments[i]["start"]
+        for j in (1, 2):
+            if i + j >= len(seg_norms):
+                break
+            joined += " " + seg_norms[i + j]
+            if q in joined:
+                return segments[i]["start"]
+    return None
+
+
+def _excerpt(segments: list[dict], start: float, n_words: int = 40) -> str:
+    words: list[str] = []
+    for seg in segments:
+        if seg["end"] <= start:
+            continue
+        words.extend(seg["text"].split())
+        if len(words) >= n_words:
+            break
+    return " ".join(words[:n_words])
 
 
 def _fit_duration(
@@ -207,11 +288,11 @@ def _ollama_chat(prompt: str) -> str:
                 "model": cfg["ollama_model"],
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "think": False,
+                "think": bool(cfg.get("think", True)),
                 "format": "json",
-                "options": {"temperature": 0.4, "num_ctx": 16384},
+                "options": {"temperature": 0.3, "num_ctx": 16384},
             },
-            timeout=600,
+            timeout=900,
         )
     except requests.ConnectionError:
         raise RuntimeError(
@@ -281,7 +362,103 @@ def _ollama_highlights(
             n += len(items) if isinstance(items, list) else 0
         log(f"Bloco {i}/{len(blocks)} analisado: {n} candidato(s)")
 
+    candidates = _verify_anchors(candidates, transcript, log)
+    candidates = _judge(candidates, transcript, video_title, log, want_long, want_shorts)
     return _rank_candidates(candidates, transcript, video_url, log, want_long, want_shorts)
+
+
+def _verify_anchors(candidates: dict, transcript: dict, log) -> dict:
+    """Descarta candidato cuja citação de abertura não existe na transcrição e
+    ancora o início do corte no lugar real da citação."""
+    segments = transcript["segments"]
+    seg_norms = [_norm(s["text"]) for s in segments]
+    verified: dict[str, list[dict]] = {"long": [], "shorts": []}
+    dropped = 0
+    for kind in ("long", "shorts"):
+        for item in candidates[kind]:
+            quote = str(item.get("hook_quote") or "").strip()
+            if quote:
+                loc = _locate_quote(quote, segments, seg_norms)
+                if loc is None:
+                    dropped += 1
+                    continue
+                try:
+                    length = max(_parse_ts(item["end_ts"]) - _parse_ts(item["start_ts"]), 0)
+                except (KeyError, ValueError):
+                    length = 0
+                item["start_ts"] = _ts(loc)
+                item["end_ts"] = _ts(loc + length)
+            verified[kind].append(item)
+    if dropped:
+        log(f"{dropped} candidato(s) descartado(s): citação de abertura não existe na transcrição")
+    return verified
+
+
+def _judge(candidates: dict, transcript: dict, video_title: str, log,
+           want_long: bool, want_shorts: bool) -> dict:
+    """Segunda chamada: o modelo compara TODOS os candidatos e escolhe os melhores.
+
+    Nota de bloco não é calibrada entre blocos; julgamento comparativo é onde
+    o modelo local acerta mais.
+    """
+    cuts_cfg = CONFIG["cuts"]
+    n_long = cuts_cfg["long"]["count"] if want_long else 0
+    n_shorts = cuts_cfg["shorts"]["count"] if want_shorts else 0
+    min_score = float(cuts_cfg.get("min_score", 6))
+
+    flat: list[tuple[str, dict]] = [(k, it) for k in ("long", "shorts") for it in candidates[k]]
+    if len(flat) <= max(n_long + n_shorts, 1):
+        return candidates  # nada para comparar
+
+    segments = transcript["segments"]
+    lines = []
+    for idx, (kind, item) in enumerate(flat):
+        try:
+            start = _parse_ts(item.get("start_ts", "0"))
+            length = max(_parse_ts(item.get("end_ts", "0")) - start, 0)
+        except ValueError:
+            start, length = 0.0, 0.0
+        label = "CORTE LONGO" if kind == "long" else "SHORT"
+        lines.append(
+            f'[id {idx}] {label} ~{length:.0f}s — "{item.get("title", "?")}"\n'
+            f'  gancho: "{item.get("hook_quote", "")}"\n'
+            f'  trecho: "{_excerpt(segments, start)}…"'
+        )
+
+    prompt = PROMPT_JUDGE.format(
+        video_title=video_title,
+        podcast=CONFIG["podcast"]["nome"] or "podcast original",
+        n_shorts=n_shorts,
+        n_long=n_long,
+        candidates="\n\n".join(lines),
+    )
+    try:
+        data = _extract_json(_ollama_chat(prompt))
+        selected = data["selected"]
+        assert isinstance(selected, list)
+    except Exception as e:  # noqa: BLE001 — juiz falhou: segue com os candidatos crus
+        log(f"Etapa de juiz falhou ({e}) — usando notas dos blocos")
+        return candidates
+
+    result: dict[str, list[dict]] = {"long": [], "shorts": []}
+    below = 0
+    for sel in selected:
+        try:
+            kind, item = flat[int(sel["id"])]
+            score = float(sel.get("score", 0))
+        except (KeyError, ValueError, IndexError, TypeError):
+            continue
+        if score < min_score:
+            below += 1
+            continue
+        item["score"] = score
+        result[kind].append(item)
+    skipped = len(flat) - len(selected)
+    log(
+        f"Juiz: {len(result['long']) + len(result['shorts'])} aprovado(s) de {len(flat)} "
+        f"candidato(s) ({skipped} reprovados, {below} abaixo da nota mínima {min_score:g})"
+    )
+    return result
 
 
 def _rank_candidates(
@@ -328,6 +505,7 @@ def _rank_candidates(
                     "title": str(item.get("title") or "Corte").strip(),
                     "description": _with_credits(item, video_url),
                     "hashtags": item.get("hashtags") or [],
+                    "seo_tags": item.get("seo_tags") or [],
                     "thumb_text": str(item.get("thumb_text") or ""),
                     "score": float(item.get("score") or 0),
                 }
@@ -382,10 +560,11 @@ def _anthropic_highlights(
         messages=[{"role": "user", "content": prompt}],
     )
     data = _extract_json(resp.content[0].text)
-    return _rank_candidates(
+    candidates = _verify_anchors(
         {"long": data.get("long") or [], "shorts": data.get("shorts") or []},
-        transcript, video_url, log, want_long, want_shorts,
+        transcript, log,
     )
+    return _rank_candidates(candidates, transcript, video_url, log, want_long, want_shorts)
 
 
 # ── Comum ────────────────────────────────────────────────────────────────────

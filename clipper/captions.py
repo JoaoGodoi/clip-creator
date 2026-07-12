@@ -12,10 +12,13 @@ WrapStyle: 0
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Shorts,Arial Black,95,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,2,2,60,60,{margin_v},1
+Style: Hook,Arial Black,82,&H0000D4FF,&H0000D4FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,7,2,8,70,70,120,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+
+HOOK_SECONDS = 2.8  # headline no topo durante os primeiros segundos (retenção)
 
 MAX_WORDS = 3
 MAX_GAP = 0.6  # pausa que força quebra de bloco
@@ -33,15 +36,23 @@ def build_ass(
     clip_end: float,
     out_path: Path,
     margin_v: int = 620,
+    hook_text: str = "",
 ) -> Path:
     """Escreve o .ass com blocos de até MAX_WORDS palavras, tempos relativos ao corte.
 
     margin_v posiciona a legenda a partir da base (620 = short cheio;
     ~820 coloca o texto dentro do painel de vídeo no modo dopamina).
+    hook_text vira headline no topo durante os primeiros segundos.
     """
     clip_words = [w for w in words if w["start"] >= clip_start - 0.2 and w["end"] <= clip_end + 0.2]
 
     lines: list[str] = []
+    hook = (hook_text or "").upper().replace("{", "").replace("}", "").strip()
+    if hook:
+        lines.append(
+            f"Dialogue: 1,{_ass_time(0)},{_ass_time(HOOK_SECONDS)},Hook,,0,0,0,,{hook}"
+        )
+
     block: list[dict] = []
 
     def flush() -> None:

@@ -18,17 +18,19 @@ llm:
   ollama_model: qwen3:8b
   ollama_url: http://localhost:11434
   block_minutes: 20           # tamanho do bloco de transcrição analisado por vez (ollama)
+  think: true                 # modo "pensar" do qwen3: seleção melhor, um pouco mais lenta
   anthropic_model: claude-sonnet-5   # usado se provider: anthropic (requer ANTHROPIC_API_KEY)
 
 cuts:
+  min_score: 6              # nota mínima do juiz para um corte ser aprovado (0 desliga)
   long:
     count: 2                # cortes longos por vídeo
     min_minutes: 10
     max_minutes: 12
   shorts:
     count: 5                # shorts/reels por vídeo
-    min_seconds: 25
-    max_seconds: 75
+    min_seconds: 20         # dados de 2025/26: shorts de 15-35s retêm melhor
+    max_seconds: 50
 
 render:
   crf: 20

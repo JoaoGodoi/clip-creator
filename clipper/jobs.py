@@ -154,7 +154,8 @@ def _pipeline(job: Job) -> None:
 def _clip_meta(cut: dict, folder: Path, files: dict) -> dict:
     meta = {
         "title": cut["title"], "description": cut["description"],
-        "hashtags": cut["hashtags"], "start": cut["start"], "end": cut["end"],
+        "hashtags": cut["hashtags"], "seo_tags": cut.get("seo_tags", []),
+        "start": cut["start"], "end": cut["end"],
         "duration": round(cut["end"] - cut["start"], 1), "folder": str(folder), **files,
     }
     (folder / "metadata.json").write_text(
@@ -207,6 +208,7 @@ def _render_short(job: Job, src: Path, out_root: Path, i: int, cut: dict, transc
     ass = captions.build_ass(
         transcript["words"], cut["start"], cut["end"], folder / "legenda.ass",
         margin_v=820 if bg else 620,
+        hook_text=cut.get("thumb_text", ""),
     )
     clip = editor.render_short(
         src, cut["start"], cut["end"], ass, folder / "video.mp4", bg=bg, overlay=overlay

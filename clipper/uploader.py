@@ -148,7 +148,7 @@ def upload_clip(folder: Path, progress_cb: Callable[[float], None]) -> str:
         "snippet": {
             "title": title,
             "description": meta.get("description", ""),
-            "tags": [t.lstrip("#") for t in meta.get("hashtags", [])][:30],
+            "tags": (meta.get("seo_tags") or [t.lstrip("#") for t in meta.get("hashtags", [])])[:30],
             "categoryId": str(up_cfg.get("category_id", "24")),
         },
         "status": {
@@ -205,6 +205,7 @@ def library() -> list[dict]:
             "title": meta.get("title", folder.name),
             "description": meta.get("description", ""),
             "hashtags": meta.get("hashtags", []),
+            "seo_tags": meta.get("seo_tags", []),
             "duration": meta.get("duration", 0),
             "video": str((folder / "video.mp4").relative_to(out_root)).replace("\\", "/"),
             "thumbnail": (folder / "thumbnail.jpg").exists(),

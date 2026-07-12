@@ -371,13 +371,16 @@ function uploadControl(folder, youtubeUrl) {
 const CLIPDATA = {};  // folder → {title, description, hashtags} para os botões de copiar
 
 function manualKit(c) {
-  CLIPDATA[c.folder] = { title: c.title, description: c.description, hashtags: c.hashtags || [] };
+  const tags = (c.seo_tags && c.seo_tags.length)
+    ? c.seo_tags
+    : (c.hashtags || []).map(t => t.replace('#', ''));
+  CLIPDATA[c.folder] = { title: c.title, description: c.description, tags };
   const f = JSON.stringify(c.folder);
   return `
     <button class="ghost" onclick='openFolder(${f})'>📂 Pasta</button>
     <button class="ghost" onclick='copyText(CLIPDATA[${f}].title, this)'>📋 Título</button>
     <button class="ghost" onclick='copyText(CLIPDATA[${f}].description, this)'>📝 Descrição</button>
-    <button class="ghost" onclick='copyText(CLIPDATA[${f}].hashtags.map(t => t.replace("#", "")).join(", "), this)'>🏷 Tags</button>
+    <button class="ghost" onclick='copyText(CLIPDATA[${f}].tags.join(", "), this)'>🏷 Tags</button>
     ${uploadControl(c.folder, c.youtube_url)}`;
 }
 
