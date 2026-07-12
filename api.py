@@ -25,6 +25,7 @@ class JobReq(BaseModel):
     url: str
     title: str
     dopamine: bool = False
+    cuts_mode: str = "both"  # both | shorts | long
 
 
 def _llm_status() -> tuple[bool, str]:
@@ -139,7 +140,10 @@ def get_channel(req: ChannelReq) -> dict:
 def create_job(req: JobReq) -> dict:
     if not FFMPEG:
         raise HTTPException(500, "ffmpeg não encontrado — instale e reinicie o app")
-    return {"job_id": jobs.start_job(req.url, req.title, dopamine=req.dopamine)}
+    if req.cuts_mode not in ("both", "shorts", "long"):
+        raise HTTPException(400, "cuts_mode inválido")
+    return {"job_id": jobs.start_job(req.url, req.title, dopamine=req.dopamine,
+                                     cuts_mode=req.cuts_mode)}
 
 
 @app.get("/api/jobs")

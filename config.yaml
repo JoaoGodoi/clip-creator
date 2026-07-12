@@ -33,6 +33,7 @@ cuts:
 render:
   crf: 20
   preset: veryfast
+  parallel_renders: 3     # quantos cortes renderizam ao mesmo tempo
 
 upload:
   privacy: private        # private | unlisted | public (app não verificado: YouTube força private)

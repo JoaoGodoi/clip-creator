@@ -25,6 +25,29 @@ def _register_nvidia_dlls() -> None:
                 pass
 
 
+_MODEL = None
+_MODEL_SIZE = None
+
+
+def _get_model(model_size: str, log: Callable[[str], None]):
+    """Mantém o modelo carregado entre jobs (economiza ~30s por vídeo)."""
+    global _MODEL, _MODEL_SIZE
+    if _MODEL is not None and _MODEL_SIZE == model_size:
+        return _MODEL
+
+    from faster_whisper import WhisperModel
+
+    _register_nvidia_dlls()
+    try:
+        _MODEL = WhisperModel(model_size, device="cuda", compute_type="float16")
+        log(f"Whisper '{model_size}' carregado na GPU")
+    except Exception as e:  # noqa: BLE001 — qualquer falha de CUDA cai para CPU
+        log(f"GPU indisponível ({type(e).__name__}), usando CPU (mais lento)")
+        _MODEL = WhisperModel(model_size, device="cpu", compute_type="int8")
+    _MODEL_SIZE = model_size
+    return _MODEL
+
+
 def transcribe(
     media_path: Path,
     model_size: str = "medium",
@@ -33,17 +56,7 @@ def transcribe(
     progress_cb: Callable[[float], None] | None = None,
 ) -> dict:
     """Retorna {"segments": [...], "words": [...], "duration": float}."""
-    from faster_whisper import WhisperModel
-
-    _register_nvidia_dlls()
-
-    model = None
-    try:
-        model = WhisperModel(model_size, device="cuda", compute_type="float16")
-        log(f"Whisper '{model_size}' carregado na GPU")
-    except Exception as e:  # noqa: BLE001 — qualquer falha de CUDA cai para CPU
-        log(f"GPU indisponível ({type(e).__name__}), usando CPU (mais lento)")
-        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+    model = _get_model(model_size, log)
 
     seg_iter, info = model.transcribe(
         str(media_path),

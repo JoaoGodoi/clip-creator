@@ -34,6 +34,10 @@
   .hint { color: var(--muted); font-size: .8rem; }
   .options-line { margin-top: 12px; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .85rem; flex-wrap: wrap; user-select: none; }
   .options-line input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .seg { display: flex; gap: 4px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .seg label { display: flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 6px; cursor: pointer; user-select: none; }
+  .seg label:has(input:checked) { background: var(--accent); color: #fff; }
+  .seg input { display: none; }
   .error { color: var(--red); margin-top: 10px; font-size: .85rem; white-space: pre-wrap; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; margin-top: 18px; }
@@ -90,6 +94,14 @@
     <div class="row">
       <input type="text" id="channelUrl" placeholder="Cole a URL do canal (ex: https://www.youtube.com/@canal)">
       <button id="btnList" onclick="listChannel()">Buscar vídeos</button>
+    </div>
+    <div class="options-line">
+      <span>Gerar:</span>
+      <div class="seg" id="cutsModeSeg">
+        <label><input type="radio" name="cutsMode" value="both" checked> 🎬 Os dois</label>
+        <label><input type="radio" name="cutsMode" value="shorts"> 📱 Só shorts</label>
+        <label><input type="radio" name="cutsMode" value="long"> 🎥 Só longos</label>
+      </div>
     </div>
     <label class="options-line">
       <input type="checkbox" id="dopamineChk">
@@ -184,10 +196,15 @@ async function listChannel() {
   }
 }
 
+function cutsMode() {
+  return document.querySelector('input[name="cutsMode"]:checked').value;
+}
+
 async function startJob(url, title) {
-  if (!confirm(`Gerar cortes de:\n\n${title}\n\nIsso baixa e processa o vídeo inteiro (pode levar vários minutos).`)) return;
+  const modeLabel = { both: 'shorts + cortes longos', shorts: 'só shorts', long: 'só cortes longos' }[cutsMode()];
+  if (!confirm(`Gerar ${modeLabel} de:\n\n${title}\n\nIsso baixa e processa o vídeo inteiro (pode levar vários minutos).`)) return;
   try {
-    await api('/api/jobs', { url, title, dopamine: $('dopamineChk').checked });
+    await api('/api/jobs', { url, title, dopamine: $('dopamineChk').checked, cuts_mode: cutsMode() });
     refreshJobs();
     if (!polling) polling = setInterval(refreshJobs, 1500);
   } catch (e) { alert(e.message); }
@@ -481,6 +498,11 @@ async function deleteAll() {
 
 $('dopamineChk').checked = localStorage.getItem('dopamine') === '1';
 $('dopamineChk').onchange = () => localStorage.setItem('dopamine', $('dopamineChk').checked ? '1' : '0');
+
+const savedMode = localStorage.getItem('cutsMode') || 'both';
+const savedRadio = document.querySelector(`input[name="cutsMode"][value="${savedMode}"]`);
+if (savedRadio) savedRadio.checked = true;
+$('cutsModeSeg').onchange = () => localStorage.setItem('cutsMode', cutsMode());
 
 loadHealth();
 loadAuth();

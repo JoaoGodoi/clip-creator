@@ -8,6 +8,7 @@ import threading
 import time
 import traceback
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,6 +29,7 @@ class Job:
     error: str = ""
     mock: bool = False
     dopamine: bool = False
+    cuts_mode: str = "both"          # both | shorts | long
     output_dir: str = ""
 
     def add_log(self, msg: str) -> None:
@@ -44,10 +46,15 @@ class Job:
 
 JOBS: dict[str, Job] = {}
 
+# A GPU só aguenta um Whisper por vez — jobs simultâneos revezam a transcrição
+# enquanto as demais etapas (download, LLM, render) rodam em paralelo.
+_GPU_LOCK = threading.Lock()
 
-def start_job(video_url: str, video_title: str, dopamine: bool = False) -> str:
+
+def start_job(video_url: str, video_title: str, dopamine: bool = False,
+              cuts_mode: str = "both") -> str:
     job = Job(id=uuid.uuid4().hex[:8], video_url=video_url, video_title=video_title,
-              dopamine=dopamine)
+              dopamine=dopamine, cuts_mode=cuts_mode)
     JOBS[job.id] = job
     threading.Thread(target=_pipeline, args=(job,), daemon=True).start()
     return job.id
@@ -90,13 +97,15 @@ def _pipeline(job: Job) -> None:
             transcript = json.loads(transcript_cache.read_text(encoding="utf-8"))
             job.add_log("Transcrição em cache, reutilizando")
         else:
-            _set(job, "Transcrevendo (Whisper)", 21)
-            wcfg = CONFIG["whisper"]
-            transcript = transcriber.transcribe(
-                src, wcfg["model"], wcfg["language"],
-                log=job.add_log,
-                progress_cb=lambda p: _set(job, "Transcrevendo (Whisper)", 21 + p * 29),
-            )
+            _set(job, "Aguardando GPU para transcrever", 21)
+            with _GPU_LOCK:
+                _set(job, "Transcrevendo (Whisper)", 21)
+                wcfg = CONFIG["whisper"]
+                transcript = transcriber.transcribe(
+                    src, wcfg["model"], wcfg["language"],
+                    log=job.add_log,
+                    progress_cb=lambda p: _set(job, "Transcrevendo (Whisper)", 21 + p * 29),
+                )
             transcript_cache.write_text(
                 json.dumps(transcript, ensure_ascii=False), encoding="utf-8"
             )
@@ -106,25 +115,31 @@ def _pipeline(job: Job) -> None:
         # 3. Seleção de cortes
         _set(job, "Escolhendo os melhores cortes", 52)
         cuts = highlights.find_highlights(
-            transcript, job.video_title, job.video_url, log=job.add_log
+            transcript, job.video_title, job.video_url,
+            log=job.add_log, cuts_mode=job.cuts_mode,
         )
         job.mock = cuts.get("mock", False)
 
-        # 4. Renderização
+        # 4. Renderização (paralela)
         out_root = path_for("output") / f"{_safe(job.video_title)}_{video_id}"
         job.output_dir = str(out_root)
-        total = len(cuts["long"]) + len(cuts["shorts"]) or 1
+        tasks = [("long", i, cut) for i, cut in enumerate(cuts["long"], 1)]
+        tasks += [("shorts", i, cut) for i, cut in enumerate(cuts["shorts"], 1)]
+        total = len(tasks) or 1
         done = 0
+        workers = max(1, CONFIG["render"].get("parallel_renders", 3))
+        _set(job, f"Renderizando {total} corte(s) ({workers} em paralelo)", 55)
 
-        for i, cut in enumerate(cuts["long"], 1):
-            _set(job, f"Renderizando corte longo {i}/{len(cuts['long'])}", 55 + done / total * 40)
-            job.results["long"].append(_render_long(job, src, out_root, i, cut, transcript))
-            done += 1
-
-        for i, cut in enumerate(cuts["shorts"], 1):
-            _set(job, f"Renderizando short {i}/{len(cuts['shorts'])}", 55 + done / total * 40)
-            job.results["shorts"].append(_render_short(job, src, out_root, i, cut, transcript))
-            done += 1
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            renderers = {"long": _render_long, "shorts": _render_short}
+            futures = {
+                pool.submit(renderers[kind], job, src, out_root, i, cut, transcript): kind
+                for kind, i, cut in tasks
+            }
+            for fut in as_completed(futures):
+                job.results[futures[fut]].append(fut.result())
+                done += 1
+                _set(job, f"Renderizando cortes ({done}/{total})", 55 + done / total * 40)
 
         _set(job, "Concluído", 100)
         job.status = "concluído"

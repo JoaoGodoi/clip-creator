@@ -39,9 +39,7 @@ Podcast: {podcast}
 Duração total: {duration_min:.0f} minutos
 
 Selecione:
-{long_req}
-2. {n_shorts} SHORTS de {s_min} a {s_max} segundos — momentos com gancho forte nos \
-primeiros 3 segundos, autocontidos, com pico de humor, polêmica, emoção ou insight.
+{requests}
 
 {rules}
 
@@ -56,9 +54,7 @@ PROMPT_BLOCK = """Você é um editor de cortes de podcast experiente. Abaixo est
 (de {block_start} a {block_end}) da transcrição do episódio "{video_title}" do podcast {podcast}.
 
 Liste os candidatos a corte que existem DENTRO deste trecho:
-1. Até 3 SHORTS de {s_min} a {s_max} segundos — momentos com gancho forte nos primeiros \
-3 segundos, autocontidos, com pico de humor, polêmica, emoção ou insight.
-{long_req}
+{requests}
 
 Se o trecho não tiver bons candidatos, retorne listas vazias — não invente.
 
@@ -137,30 +133,48 @@ def _fit_duration(
     return start, end
 
 
-def _wants_long(duration: float, log: Callable[[str], None]) -> bool:
-    """Vídeo menor que o corte longo mínimo gera só shorts."""
-    min_s = CONFIG["cuts"]["long"]["min_minutes"] * 60
-    if duration < min_s:
-        log(f"Vídeo curto ({duration / 60:.0f} min) — gerando apenas shorts")
-        return False
-    return True
+def _wants(cuts_mode: str, duration: float, log: Callable[[str], None]) -> tuple[bool, bool]:
+    """(want_long, want_shorts) a partir do modo escolhido e da duração do vídeo."""
+    want_shorts = cuts_mode != "long"
+    want_long = cuts_mode != "shorts"
+    if want_long:
+        min_s = CONFIG["cuts"]["long"]["min_minutes"] * 60
+        if duration < min_s:
+            log(f"Vídeo curto ({duration / 60:.0f} min) — sem cortes longos")
+            want_long = False
+    return want_long, want_shorts
 
 
-def _long_req(want_long: bool, per_block: bool) -> str:
-    cfg = CONFIG["cuts"]["long"]
-    if not want_long:
-        return 'NÃO sugira cortes longos — o vídeo é curto demais. Retorne "long": [].'
-    if per_block:
-        return (
-            f"2. Até 2 CORTES LONGOS de {cfg['min_minutes']} a {cfg['max_minutes']} minutos "
-            f"— SOMENTE se este trecho contiver um bloco temático coeso completo "
-            f"(história ou discussão com começo, meio e fim)."
+def _requests(want_long: bool, want_shorts: bool, per_block: bool) -> str:
+    cuts_cfg = CONFIG["cuts"]
+    lines: list[str] = []
+    if want_shorts:
+        s = cuts_cfg["shorts"]
+        qty = "Até 3" if per_block else str(s["count"])
+        lines.append(
+            f"- {qty} SHORTS de {s['min_seconds']} a {s['max_seconds']} segundos — momentos "
+            f"com gancho forte nos primeiros 3 segundos, autocontidos, com pico de humor, "
+            f"polêmica, emoção ou insight."
         )
-    return (
-        f"1. {cfg['count']} CORTES LONGOS de {cfg['min_minutes']} a {cfg['max_minutes']} "
-        f"minutos — blocos temáticos coesos que funcionam como vídeo independente no "
-        f"YouTube (uma história completa, uma discussão com começo/meio/fim)."
-    )
+    else:
+        lines.append('- NÃO gere shorts. Retorne "shorts": [].')
+    if want_long:
+        lo = cuts_cfg["long"]
+        if per_block:
+            lines.append(
+                f"- Até 2 CORTES LONGOS de {lo['min_minutes']} a {lo['max_minutes']} minutos "
+                f"— SOMENTE se este trecho contiver um bloco temático coeso completo "
+                f"(história ou discussão com começo, meio e fim)."
+            )
+        else:
+            lines.append(
+                f"- {lo['count']} CORTES LONGOS de {lo['min_minutes']} a {lo['max_minutes']} "
+                f"minutos — blocos temáticos coesos que funcionam como vídeo independente no "
+                f"YouTube (uma história completa, uma discussão com começo/meio/fim)."
+            )
+    else:
+        lines.append('- NÃO gere cortes longos. Retorne "long": [].')
+    return "\n".join(lines)
 
 
 # ── Entrada principal ────────────────────────────────────────────────────────
@@ -170,11 +184,15 @@ def find_highlights(
     video_title: str,
     video_url: str,
     log: Callable[[str], None] = print,
+    cuts_mode: str = "both",
 ) -> dict:
+    want_long, want_shorts = _wants(cuts_mode, transcript["duration"], log)
+    if not want_long and not want_shorts:
+        return {"long": [], "shorts": [], "mock": False}
     provider = CONFIG["llm"].get("provider", "ollama")
     if provider == "ollama":
-        return _ollama_highlights(transcript, video_title, video_url, log)
-    return _anthropic_highlights(transcript, video_title, video_url, log)
+        return _ollama_highlights(transcript, video_title, video_url, log, want_long, want_shorts)
+    return _anthropic_highlights(transcript, video_title, video_url, log, want_long, want_shorts)
 
 
 # ── Provider: Ollama (local) ─────────────────────────────────────────────────
@@ -229,12 +247,13 @@ def _overlap_ratio(a: dict, b: dict) -> float:
     return max(inter, 0) / shorter if shorter > 0 else 0
 
 
-def _ollama_highlights(transcript: dict, video_title: str, video_url: str, log) -> dict:
+def _ollama_highlights(
+    transcript: dict, video_title: str, video_url: str, log,
+    want_long: bool, want_shorts: bool,
+) -> dict:
     cfg = CONFIG["llm"]
-    cuts_cfg = CONFIG["cuts"]
     block_seconds = cfg.get("block_minutes", 20) * 60
     blocks = _blocks(transcript["segments"], block_seconds)
-    want_long = _wants_long(transcript["duration"], log)
     log(f"Analisando transcrição em {len(blocks)} bloco(s) com {cfg['ollama_model']} (local)")
 
     candidates: dict[str, list[dict]] = {"long": [], "shorts": []}
@@ -245,9 +264,7 @@ def _ollama_highlights(transcript: dict, video_title: str, video_url: str, log) 
             block_end=_ts(block[-1]["end"]),
             video_title=video_title,
             podcast=CONFIG["podcast"]["nome"] or "podcast original",
-            s_min=cuts_cfg["shorts"]["min_seconds"],
-            s_max=cuts_cfg["shorts"]["max_seconds"],
-            long_req=_long_req(want_long, per_block=True),
+            requests=_requests(want_long, want_shorts, per_block=True),
             rules=RULES,
             item_fmt=ITEM_FMT,
             transcript="\n".join(lines),
@@ -264,10 +281,13 @@ def _ollama_highlights(transcript: dict, video_title: str, video_url: str, log) 
             n += len(items) if isinstance(items, list) else 0
         log(f"Bloco {i}/{len(blocks)} analisado: {n} candidato(s)")
 
-    return _rank_candidates(candidates, transcript, video_url, log)
+    return _rank_candidates(candidates, transcript, video_url, log, want_long, want_shorts)
 
 
-def _rank_candidates(candidates: dict, transcript: dict, video_url: str, log) -> dict:
+def _rank_candidates(
+    candidates: dict, transcript: dict, video_url: str, log,
+    want_long: bool = True, want_shorts: bool = True,
+) -> dict:
     cuts_cfg = CONFIG["cuts"]
     duration = transcript["duration"]
     starts = [s["start"] for s in transcript["segments"]]
@@ -276,14 +296,16 @@ def _rank_candidates(candidates: dict, transcript: dict, video_url: str, log) ->
     limits = {
         "long": (cuts_cfg["long"]["min_minutes"] * 60,
                  cuts_cfg["long"]["max_minutes"] * 60,
-                 cuts_cfg["long"]["count"]),
+                 cuts_cfg["long"]["count"] if want_long else 0),
         "shorts": (cuts_cfg["shorts"]["min_seconds"],
                    cuts_cfg["shorts"]["max_seconds"],
-                   cuts_cfg["shorts"]["count"]),
+                   cuts_cfg["shorts"]["count"] if want_shorts else 0),
     }
 
     result = {"long": [], "shorts": [], "mock": False}
     for kind, (dur_min, dur_max, count) in limits.items():
+        if count == 0:
+            continue
         valid: list[dict] = []
         for item in candidates[kind]:
             try:
@@ -328,23 +350,22 @@ def _rank_candidates(candidates: dict, transcript: dict, video_url: str, log) ->
 
 # ── Provider: Anthropic (Claude API) ─────────────────────────────────────────
 
-def _anthropic_highlights(transcript: dict, video_title: str, video_url: str, log) -> dict:
-    cuts_cfg = CONFIG["cuts"]
+def _anthropic_highlights(
+    transcript: dict, video_title: str, video_url: str, log,
+    want_long: bool, want_shorts: bool,
+) -> dict:
     duration = transcript["duration"]
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log("AVISO: ANTHROPIC_API_KEY não definida — gerando cortes MOCK para teste")
-        return _mock_cuts(transcript, video_url)
+        return _mock_cuts(transcript, video_url, want_long, want_shorts)
 
     lines = [f"[{_ts(s['start'])}] {s['text']}" for s in transcript["segments"]]
     prompt = PROMPT_FULL.format(
         video_title=video_title,
         podcast=CONFIG["podcast"]["nome"] or "podcast original",
         duration_min=duration / 60,
-        long_req=_long_req(_wants_long(duration, log), per_block=False),
-        n_shorts=cuts_cfg["shorts"]["count"],
-        s_min=cuts_cfg["shorts"]["min_seconds"],
-        s_max=cuts_cfg["shorts"]["max_seconds"],
+        requests=_requests(want_long, want_shorts, per_block=False),
         rules=RULES,
         item_fmt=ITEM_FMT,
         transcript="\n".join(lines),
@@ -363,7 +384,7 @@ def _anthropic_highlights(transcript: dict, video_title: str, video_url: str, lo
     data = _extract_json(resp.content[0].text)
     return _rank_candidates(
         {"long": data.get("long") or [], "shorts": data.get("shorts") or []},
-        transcript, video_url, log,
+        transcript, video_url, log, want_long, want_shorts,
     )
 
 
@@ -386,14 +407,14 @@ def _extract_json(text: str) -> dict:
     return json.loads(match.group())
 
 
-def _mock_cuts(transcript: dict, video_url: str) -> dict:
+def _mock_cuts(transcript: dict, video_url: str, want_long: bool = True, want_shorts: bool = True) -> dict:
     """Janelas uniformes só para validar download/edição/legenda sem LLM."""
     cuts_cfg = CONFIG["cuts"]
     duration = transcript["duration"]
     result = {"long": [], "shorts": [], "mock": True}
 
     long_len = cuts_cfg["long"]["min_minutes"] * 60
-    for i in range(cuts_cfg["long"]["count"]):
+    for i in range(cuts_cfg["long"]["count"] if want_long else 0):
         start = (i + 1) * duration / (cuts_cfg["long"]["count"] + 2)
         if start + long_len > duration:
             break
@@ -409,7 +430,7 @@ def _mock_cuts(transcript: dict, video_url: str) -> dict:
             }
         )
     short_len = cuts_cfg["shorts"]["max_seconds"]
-    for i in range(cuts_cfg["shorts"]["count"]):
+    for i in range(cuts_cfg["shorts"]["count"] if want_shorts else 0):
         start = (i + 1) * duration / (cuts_cfg["shorts"]["count"] + 2)
         if start + short_len > duration:
             break
