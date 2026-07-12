@@ -37,3 +37,8 @@ render:
 upload:
   privacy: private        # private | unlisted | public (app não verificado: YouTube força private)
   category_id: "24"       # 24 = Entertainment
+
+branding:
+  # Crédito exigido pela licença da música da ending — entra sozinho na
+  # descrição dos cortes longos (que levam o outro.mp4).
+  ending_music_credit: "🎵 Música da ending: massobeats - rose water (freetouse.com)"

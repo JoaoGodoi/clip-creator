@@ -15,7 +15,7 @@ from typing import Callable
 
 import requests
 
-from .config import CONFIG
+from .config import CONFIG, ROOT
 
 RULES = """Regras obrigatórias:
 - Use APENAS timestamps que existem na transcrição.
@@ -316,6 +316,11 @@ def _rank_candidates(candidates: dict, transcript: dict, video_url: str, log) ->
                 break
             if all(_overlap_ratio(cand, kept) < 0.3 for kept in result[kind]):
                 result[kind].append(cand)
+
+    music_credit = CONFIG.get("branding", {}).get("ending_music_credit", "")
+    if music_credit and (ROOT / CONFIG["paths"]["assets"] / "outro.mp4").exists():
+        for cut in result["long"]:
+            cut["description"] += f"\n\n{music_credit}"
 
     log(f"Selecionados: {len(result['long'])} cortes longos, {len(result['shorts'])} shorts")
     return result

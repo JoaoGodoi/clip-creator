@@ -7,3 +7,6 @@ assets/dopamine/*.mp4
 assets/overlay/*.mp4
 assets/overlay/*.gif
 client_secret.json
+assets/outro.mp4
+assets/music/*.m4a
+assets/music/*.mp3

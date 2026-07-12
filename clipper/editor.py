@@ -58,8 +58,8 @@ def render_long(src: Path, start: float, end: float, out: Path) -> Path:
     inputs: list[str] = []
     chains: list[str] = []
     idx = 0
-    for piece in (intro, None, outro):
-        if piece is None:
+    for piece in (intro, "MAIN", outro):
+        if piece == "MAIN":
             inputs += ["-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", str(src)]
         elif piece:
             inputs += ["-i", str(piece)]
