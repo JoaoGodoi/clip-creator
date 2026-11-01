@@ -27,8 +27,10 @@ def path_for(key: str) -> Path:
 
 def ollama_url() -> str:
     """URL do Ollama. `localhost` vira 127.0.0.1: no Windows ele tenta IPv6 (::1)
-    primeiro, o Ollama só escuta IPv4 e a tentativa gasta ~2s antes de cair pro IPv4."""
-    url = CONFIG["llm"].get("ollama_url", "http://127.0.0.1:11434").rstrip("/")
+    primeiro, o Ollama só escuta IPv4 e a tentativa gasta ~2s antes de cair pro IPv4.
+    Instalado pelo .exe, o run.bat aponta PODCAST_OLLAMA_URL pro Ollama da pasta do app."""
+    url = (os.environ.get("PODCAST_OLLAMA_URL")
+           or CONFIG["llm"].get("ollama_url", "http://127.0.0.1:11434")).rstrip("/")
     return url.replace("//localhost:", "//127.0.0.1:")
 
 

@@ -127,37 +127,67 @@ if ($nvidia) {
 
 # ---------------------------------------------------------------- Ollama
 Step "Ollama (IA local que escolhe os cortes)"
-$ollama = "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe"
+# Ollama portatil (zip oficial, sem instalador) dentro da pasta do app, com os
+# modelos junto: nada vai para o C: se a pessoa escolheu outro disco. Roda numa
+# porta propria para nao brigar com um Ollama que ja exista no PC.
+# O run.bat define as mesmas variaveis ao abrir o app.
+$OllamaDir = Join-Path $AppDir 'ollama'
+$ollama = Join-Path $OllamaDir 'ollama.exe'
+$env:OLLAMA_HOST = '127.0.0.1:11435'
+$env:OLLAMA_MODELS = Join-Path $OllamaDir 'models'
+
 if (-not (Test-Path $ollama)) {
-    $setup = Join-Path $Tmp 'OllamaSetup.exe'
-    if (-not (Download 'https://ollama.com/download/OllamaSetup.exe' $setup)) {
-        if (-not (Download 'https://github.com/ollama/ollama/releases/latest/download/OllamaSetup.exe' $setup)) {
-            Fail "Nao consegui baixar o Ollama. Confira a internet e tente de novo."
-        }
+    $zip = Join-Path $Tmp 'ollama.zip'
+    Write-Host "    Baixando o Ollama (~1,5 GB)..."
+    if (-not (Download 'https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip' $zip)) {
+        Fail "Nao consegui baixar o Ollama. Confira a internet e tente de novo."
     }
-    Write-Host "    Instalando Ollama (1-2 min)..."
-    # Nao usar -Wait: no PowerShell 5.1 ele espera tambem os processos filhos, e o
-    # setup do Ollama termina abrindo o app dele, que fica rodando -> travava aqui.
-    $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/NORESTART', '/SUPPRESSMSGBOXES' -PassThru
-    $p.WaitForExit()
-    Remove-Item $setup -Force -ErrorAction SilentlyContinue
-    # O desinstalador ("apagar tudo") so remove o Ollama se fomos nos que instalamos
-    if (Test-Path $ollama) { Set-Content (Join-Path $AppDir 'instalou-ollama.txt') 'sim' }
+    $x = Join-Path $Tmp 'ollama-x'
+    Extract $zip $x
+    New-Item -ItemType Directory -Force $OllamaDir | Out-Null
+    Get-ChildItem $x | Move-Item -Destination $OllamaDir -Force
+    Remove-Item $x, $zip -Recurse -Force -ErrorAction SilentlyContinue
 }
 if (-not (Test-Path $ollama)) { Fail "O Ollama nao instalou." }
-Ok "Ollama instalado"
+Ok "Ollama em $OllamaDir"
+
+# Versoes antigas do instalador punham o Ollama no C: (Programs\Ollama, modelos em
+# ~\.ollama). Se foi a gente que instalou (marcacao), traz os modelos para ca,
+# sem baixar de novo, e remove o Ollama antigo. Um Ollama que a pessoa ja tinha fica.
+$legacyMark = Join-Path $AppDir 'instalou-ollama.txt'
+if (Test-Path $legacyMark) {
+    $legacy = "$env:LOCALAPPDATA\Programs\Ollama"
+    Write-Host "    Tirando o Ollama antigo do C: (era de uma versao anterior do instalador)..."
+    Get-Process 'ollama', 'ollama app' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -like "$legacy\*" } | Stop-Process -Force
+    $oldModels = "$env:USERPROFILE\.ollama\models"
+    if (Test-Path $oldModels) {
+        Write-Host "    Movendo os modelos para $env:OLLAMA_MODELS..."
+        # robocopy /MOVE funciona entre discos (Move-Item nao move pastas entre discos)
+        robocopy $oldModels $env:OLLAMA_MODELS /E /MOVE /NFL /NDL /NJH /NJS /NP | Out-Null
+    }
+    $unins = Join-Path $legacy 'unins000.exe'
+    if (Test-Path $unins) {
+        $p = Start-Process -FilePath $unins -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -PassThru
+        $p.WaitForExit()
+    }
+    cmd /c rmdir /s /q "`"$env:USERPROFILE\.ollama`"" 2>$null
+    Remove-Item $legacyMark, (Join-Path $AppDir 'baixou-modelos.txt') -Force -ErrorAction SilentlyContinue
+    Ok "Ollama antigo removido do C:"
+}
 
 function Ollama-Up {
-    try { Invoke-RestMethod 'http://127.0.0.1:11434/api/version' -TimeoutSec 2 | Out-Null; return $true }
+    try { Invoke-RestMethod "http://$env:OLLAMA_HOST/api/version" -TimeoutSec 2 | Out-Null; return $true }
     catch { return $false }
 }
-# O app do Ollama costuma subir sozinho depois de instalar, mas na primeira vez
-# pode passar de 1 minuto. So liga o servidor na mao se nada estiver rodando.
-for ($i = 0; $i -lt 180 -and -not (Ollama-Up); $i += 2) {
-    if ($i -eq 10 -and -not (Get-Process 'ollama', 'ollama app' -ErrorAction SilentlyContinue)) {
-        Start-Process -FilePath $ollama -ArgumentList 'serve' -WindowStyle Hidden
-    }
-    Start-Sleep -Seconds 2
+# O Ollama guarda chave e cache em ~\.ollama: com o perfil apontando para
+# ollama\home, isso tambem fica na pasta do app (restaurado depois do pull)
+$realProfile = $env:USERPROFILE
+$env:USERPROFILE = Join-Path $OllamaDir 'home'
+New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
+if (-not (Ollama-Up)) {
+    Start-Process -FilePath $ollama -ArgumentList 'serve' -WindowStyle Hidden
+    for ($i = 0; $i -lt 60 -and -not (Ollama-Up); $i += 2) { Start-Sleep -Seconds 2 }
 }
 if (-not (Ollama-Up)) { Fail "O Ollama nao abriu. Reinicie o PC e clique em 'Atualizar Podcast Clipper'." }
 
@@ -165,11 +195,9 @@ $model = 'qwen3:8b'
 $m = Select-String -Path (Join-Path $App 'config.yaml') -Pattern '^\s*ollama_model:\s*(\S+)' | Select-Object -First 1
 if ($m) { $model = $m.Matches[0].Groups[1].Value }
 Step "Modelo de IA '$model' (~5 GB na primeira vez)"
-$hadModel = [bool]((& $ollama list) -match ('^' + [regex]::Escape($model) + '\s'))
 & $ollama pull $model
 if ($LASTEXITCODE -ne 0) { Fail "Nao consegui baixar o modelo $model." }
-# Idem para o modelo: o "apagar tudo" so remove modelos que nos baixamos
-if (-not $hadModel) { Add-Content (Join-Path $AppDir 'baixou-modelos.txt') $model }
+$env:USERPROFILE = $realProfile
 Ok "modelo pronto"
 
 # ---------------------------------------------------------------- videos de fundo

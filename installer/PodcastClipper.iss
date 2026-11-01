@@ -7,7 +7,7 @@
 ; Instala por usuario, sem pedir admin.
 
 #define AppName "Podcast Clipper"
-#define AppVersion "1.1"
+#define AppVersion "1.2"
 
 [Setup]
 AppId={{6E0B8F4A-3C1D-4E5B-9A7F-2D8C4B1E9F03}
@@ -27,8 +27,9 @@ UninstallDisplayIcon={app}\clipper.ico
 WizardStyle=modern
 Compression=lzma2
 SolidCompression=yes
-; Modelo de IA + bibliotecas da GPU + videos de fundo
-ExtraDiskSpaceRequired=16000000000
+; Tudo fica na pasta escolhida: Ollama + modelo de IA, bibliotecas da GPU,
+; videos de fundo e o modelo do Whisper
+ExtraDiskSpaceRequired=18000000000
 
 [Languages]
 Name: "ptbr"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
@@ -53,11 +54,15 @@ Filename: "{app}\app\run.bat"; WorkingDir: "{app}\app"; Description: "Abrir o {#
 
 [UninstallRun]
 Filename: "powershell.exe"; Parameters: "-NoProfile -Command ""Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"""; Flags: runhidden; RunOnceId: "StopServer"
+; Ollama e qualquer outro processo rodando de dentro da pasta (senao os arquivos ficam presos)
+Filename: "powershell.exe"; Parameters: "-NoProfile -Command ""Get-Process | Where-Object {{ $_.Path -like '{app}\*' -and $_.Name -notlike 'unins*' } | Stop-Process -Force -ErrorAction SilentlyContinue"""; Flags: runhidden; RunOnceId: "StopAppProcs"
 
-; Desinstalacao normal: apaga tudo menos a pasta output (os cortes ja gerados).
+; Desinstalacao normal: apaga tudo (inclusive Ollama e modelo de IA, que ficam
+; em {app}\ollama) menos a pasta output, com os cortes ja gerados.
 ; Se a pessoa escolher "apagar tudo" (pergunta no inicio da desinstalacao), o
-; [Code] tambem apaga output, Ollama e modelo de IA (veja CurUninstallStepChanged).
+; [Code] apaga tambem o output (veja CurUninstallStepChanged).
 [UninstallDelete]
+Type: filesandordirs; Name: "{app}\ollama"
 Type: filesandordirs; Name: "{app}\hf"
 Type: filesandordirs; Name: "{app}\tools"
 Type: filesandordirs; Name: "{app}\python"
@@ -111,9 +116,9 @@ begin
   if not UninstallSilent then
     FullWipe := MsgBox(
       'Quer apagar TUDO do Podcast Clipper?' + #13#10 + #13#10 +
-      'SIM: apaga também os cortes já gerados, o modelo de IA e o Ollama ' +
-      '(se foi este instalador que instalou). Não sobra nada.' + #13#10 + #13#10 +
-      'NÃO: apaga o app, mas guarda os cortes já gerados.',
+      'SIM: apaga também os cortes já gerados. Não sobra nada.' + #13#10 + #13#10 +
+      'NÃO: apaga o app (inclusive o Ollama e o modelo de IA), mas guarda ' +
+      'os cortes já gerados.',
       mbConfirmation, MB_YESNO) = IDYES;
   Result := True;
 end;
@@ -125,7 +130,9 @@ begin
   Exec(Exe, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-{ So mexe no que o install.ps1 marcou como nosso: um Ollama que ja existia
+{ Instalacoes antigas (antes da 1.2) punham o Ollama no C:. O install.ps1 migra
+  isso ao atualizar; aqui cobre quem desinstala sem ter atualizado.
+  So mexe no que o install.ps1 marcou como nosso: um Ollama que ja existia
   no PC fica, e dele so saem os modelos que nos baixamos. }
 procedure WipeOllama;
 var

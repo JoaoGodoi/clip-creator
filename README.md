@@ -8,7 +8,7 @@ Cola o link de um canal do YouTube, escolhe o episódio e o app faz os cortes:
 Tudo roda no seu PC: download (yt-dlp), transcrição (Whisper), escolha dos melhores
 trechos (IA local, Ollama) e edição (FFmpeg).
 
-Para **Windows 10/11**. Precisa de ~16 GB livres e internet boa (baixa uns 10 GB na instalação).
+Para **Windows 10/11**. Precisa de ~18 GB livres e internet boa (baixa uns 10 GB na instalação).
 
 ---
 
@@ -26,6 +26,9 @@ Para **Windows 10/11**. Precisa de ~16 GB livres e internet boa (baixa uns 10 GB
 Não precisa instalar nada antes nem ser administrador: o instalador baixa sozinho Python,
 FFmpeg, Ollama, o modelo de IA, as bibliotecas (com aceleração de GPU se tiver placa
 NVIDIA) e os vídeos de fundo dos shorts.
+
+**Tudo fica na pasta que você escolher no instalador**, inclusive o Ollama e o modelo de IA.
+SSD pequeno? Escolha uma pasta no HD (ex.: `D:\PodcastClipper`) e o C: fica livre.
 
 ## ▶️ Usar
 
@@ -50,7 +53,7 @@ o que estiver faltando ou quebrado e testa tudo no final. Resolve a maioria dos 
 |---|---|
 | Deu erro na janela preta da instalação | Mande um print + o arquivo `%LOCALAPPDATA%\PodcastClipper\install-log.txt` (cole esse caminho na barra do Explorer). |
 | Download do YouTube falha / erro 403 | Feche e abra o app: ao abrir ele atualiza o yt-dlp sozinho. |
-| "ollama não está rodando" | Abra o app **Ollama** pelo Menu Iniciar e recarregue a página. |
+| "ollama não está rodando" | Feche (Menu Iniciar → Fechar Podcast Clipper) e abra o app de novo. |
 | Log diz "GPU indisponível, usando CPU" | Normal sem placa NVIDIA. Com NVIDIA: atualize o driver em nvidia.com/pt-br/drivers. |
 | PC travando no render | No `config.yaml`, coloque `render.parallel_renders: 1`. |
 | Qualquer outro erro estranho | **Atualizar Podcast Clipper** no Menu Iniciar. |
@@ -74,10 +77,10 @@ conta Google e salve o `client_secret.json` na pasta do app.
 **Menu Iniciar → Podcast Clipper → Desinstalar** (ou Configurações do Windows → Aplicativos).
 Ele pergunta se você quer **apagar tudo**:
 
-- **Sim**: não sobra nada. Apaga também os cortes já gerados, o modelo de IA e o Ollama.
-  Se o Ollama já estava no PC antes do Podcast Clipper, ele fica: sai só o modelo que o
-  instalador baixou.
-- **Não**: apaga o app, mas guarda os cortes já gerados.
+- **Sim**: não sobra nada, nem os cortes já gerados.
+- **Não**: apaga o app (inclusive o Ollama e o modelo de IA), mas guarda os cortes já gerados.
+
+Um Ollama que você já tinha no PC antes do Podcast Clipper não é tocado: o app usa o dele, separado.
 
 ---
 
