@@ -14,13 +14,14 @@ from pathlib import Path
 from .config import CONFIG, FFMPEG, ROOT
 
 
-def _run(args: list[str]) -> None:
+def _run(args: list[str], cwd: Path | None = None) -> None:
     proc = subprocess.run(
         [FFMPEG, "-y", "-hide_banner", "-loglevel", "error", *args],
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
+        cwd=cwd,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg falhou: {proc.stderr[-800:]}")
@@ -32,11 +33,6 @@ def _enc() -> list[str]:
         "-c:v", "libx264", "-crf", str(r["crf"]), "-preset", r["preset"],
         "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
     ]
-
-
-def _filter_path(p: Path) -> str:
-    """Escapa caminho Windows para uso dentro de filtros do ffmpeg."""
-    return str(p).replace("\\", "/").replace(":", "\\:")
 
 
 def _asset(name: str) -> Path | None:
@@ -126,7 +122,11 @@ def render_short(
       pouco menor, deixando borda lateral visível.
     - nenhum: crop 9:16 tradicional em tela cheia.
     """
-    ass_part = f",ass='{_filter_path(ass_file)}'" if ass_file else ""
+    # O libass recebe só o nome do arquivo e o ffmpeg roda dentro da pasta dele:
+    # o caminho completo (com acento, vírgula, título do episódio...) quebrava a
+    # leitura da legenda em alguns PCs ("Could not create a libass track").
+    ass_part = f",ass='{ass_file.name}'" if ass_file else ""
+    cwd = ass_file.parent if ass_file else None
 
     if bg:
         top_h, bot_h, fade = 1152, 768, 220  # 60/40 de 1920; faixa do degradê
@@ -144,7 +144,7 @@ def render_short(
             *_loop_input(bg, end - start),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a", "-shortest",
             *_enc(), str(out),
-        ])
+        ], cwd=cwd)
         return out
 
     if overlay:
@@ -158,14 +158,14 @@ def render_short(
             *_loop_input(overlay, end - start),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a", "-shortest",
             *_enc(), str(out),
-        ])
+        ], cwd=cwd)
         return out
 
     vf = f"{_cover(1080, 1920)},fps=30,format=yuv420p{ass_part}"
     _run([
         "-ss", f"{start:.2f}", "-to", f"{end:.2f}", "-i", str(src),
         "-vf", vf, *_enc(), str(out),
-    ])
+    ], cwd=cwd)
     return out
 
 
