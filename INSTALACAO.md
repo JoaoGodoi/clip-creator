@@ -70,7 +70,8 @@ Google e salve o `client_secret.json` dentro da pasta do projeto.
 | "ffmpeg não encontrado" na página | Rode o `setup.bat` de novo e reabra o app (`stop.bat` → atalho). |
 | "ollama não está rodando" | Abra o app **Ollama** pelo menu Iniciar e recarregue a página. |
 | Log diz "GPU indisponível, usando CPU" | Normal sem placa NVIDIA. Com NVIDIA: atualize o driver em nvidia.com/pt-br/drivers. |
-| Download do YouTube falha / erro 403 | No PowerShell, dentro da pasta do projeto: `.venv\Scripts\python.exe -m pip install -U yt-dlp` |
+| Download do YouTube falha / erro 403 | Feche (`stop.bat`) e abra o app de novo: ao abrir, ele atualiza o yt-dlp sozinho. |
+| `metadata_errors` ou qualquer erro estranho de biblioteca | Rode o `setup.bat` de novo: ele corrige as versões e testa tudo no final. |
 | Porta 8765 em uso | Rode o `stop.bat` e abra de novo. |
 | PC travando no render | `render.parallel_renders: 1` no `config.yaml`. |
 
@@ -112,6 +113,10 @@ py -3.12 -m venv .venv
 
 ```powershell
 .venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+```powershell
+.venv\Scripts\python.exe -m pip install -U "yt-dlp[default]"
 ```
 
 Só se tiver placa NVIDIA:

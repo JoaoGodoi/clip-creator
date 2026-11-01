@@ -26,11 +26,12 @@ def path_for(key: str) -> Path:
 
 
 def find_ffmpeg() -> str | None:
-    """Procura ffmpeg no PATH e nos locais padrão do winget."""
+    """Procura ffmpeg no PATH, na pasta do instalador e nos locais padrão do winget."""
     found = shutil.which("ffmpeg")
     if found:
         return found
-    candidates = glob.glob(
+    candidates = glob.glob(str(ROOT.parent / "tools" / "ffmpeg" / "ffmpeg.exe"))
+    candidates += glob.glob(
         os.path.expandvars(
             r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg*\**\bin\ffmpeg.exe"
         ),

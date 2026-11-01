@@ -1,7 +1,11 @@
 fastapi
 uvicorn[standard]
-yt-dlp
+# yt-dlp sempre na ultima versao (o run.bat atualiza a cada abertura); o [default]
+# traz o yt-dlp-ejs, que resolve o desafio JS do YouTube (sem ele: HTTP 403)
+yt-dlp[default]
 faster-whisper
+# av 19 removeu o parametro metadata_errors que o faster-whisper 1.2.1 usa
+av<19
 anthropic
 requests
 pillow

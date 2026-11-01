@@ -10,3 +10,5 @@ client_secret.json
 assets/outro.mp4
 assets/music/*.m4a
 assets/music/*.mp3
+installer/Output/
+.venv.old/
