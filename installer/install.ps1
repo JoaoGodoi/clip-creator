@@ -21,6 +21,9 @@ New-Item -ItemType Directory -Force $Tools, $Tmp | Out-Null
 
 $env:UV_PYTHON_INSTALL_DIR = Join-Path $AppDir 'python'
 $env:UV_CACHE_DIR = Join-Path $AppDir 'cache'
+# Sempre o Python proprio do app: um Python do sistema pode ser desinstalado
+# depois e levar a .venv junto.
+$env:UV_PYTHON_PREFERENCE = 'only-managed'
 $env:Path = "$Tools\ffmpeg;$Tools\deno;$Tools\uv;$env:Path"
 
 function Step($msg) { Write-Host ""; Write-Host "==> $msg" -ForegroundColor Cyan }
@@ -74,6 +77,11 @@ $uv = Join-Path $Tools 'uv\uv.exe'
 # ---------------------------------------------------------------- Python
 Step "Python 3.12 e ambiente do projeto"
 $venvPy = Join-Path $App '.venv\Scripts\python.exe'
+$cfg = Join-Path $App '.venv\pyvenv.cfg'
+if ((Test-Path $cfg) -and -not (Select-String -Path $cfg -SimpleMatch "home = $env:UV_PYTHON_INSTALL_DIR" -Quiet)) {
+    Write-Host "    Recriando a .venv com o Python proprio do app..."
+    Remove-Item (Join-Path $App '.venv') -Recurse -Force
+}
 if (-not (Test-Path $venvPy)) {
     # --seed poe o pip na venv: o run.bat usa para atualizar o yt-dlp
     & $uv venv --python 3.12 --seed (Join-Path $App '.venv')
