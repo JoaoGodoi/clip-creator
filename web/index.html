@@ -103,6 +103,15 @@
         <label><input type="radio" name="cutsMode" value="long"> 🎥 Só longos</label>
       </div>
     </div>
+    <div class="options-line" id="shortsLenLine">
+      <span>Duração dos shorts:</span>
+      <div class="seg" id="shortsLenSeg">
+        <label><input type="radio" name="shortsLen" value="cfg" checked> <span id="shortsCfgLabel">Padrão</span></label>
+        <label><input type="radio" name="shortsLen" value="30-60"> 30s–1min</label>
+        <label><input type="radio" name="shortsLen" value="60-90"> 1–1,5min</label>
+        <label><input type="radio" name="shortsLen" value="90-180"> 1,5–3min</label>
+      </div>
+    </div>
     <label class="options-line">
       <input type="checkbox" id="dopamineChk">
       🧠 Modo dopamina — gameplay em loop na parte de baixo dos shorts
@@ -164,6 +173,8 @@ async function loadHealth() {
       chip(h.intro, '✓ intro.mp4', '– sem intro') +
       chip(h.outro, '✓ outro.mp4', '– sem ending') +
       `<span class="chip">whisper: ${h.whisper_model}</span>`;
+    if (h.shorts_seconds)
+      $('shortsCfgLabel').textContent = `Padrão (${h.shorts_seconds[0]}–${h.shorts_seconds[1]}s)`;
     $('dopamineHint').textContent = h.dopamine_videos > 0
       ? `(${h.dopamine_videos} vídeo(s) de fundo)`
       : '(coloque arquivos .mp4 em assets/dopamine/)';
@@ -200,11 +211,27 @@ function cutsMode() {
   return document.querySelector('input[name="cutsMode"]:checked').value;
 }
 
+// Duração dos shorts escolhida na tela ({} = usar o padrão do config.yaml)
+function shortsLen() {
+  const v = document.querySelector('input[name="shortsLen"]:checked').value;
+  if (v === 'cfg') return {};
+  const [min, max] = v.split('-').map(Number);
+  return { shorts_min: min, shorts_max: max };
+}
+
+function syncShortsLen() {
+  $('shortsLenLine').style.display = cutsMode() === 'long' ? 'none' : '';
+}
+
 async function startJob(url, title) {
-  const modeLabel = { both: 'shorts + cortes longos', shorts: 'só shorts', long: 'só cortes longos' }[cutsMode()];
+  let modeLabel = { both: 'shorts + cortes longos', shorts: 'só shorts', long: 'só cortes longos' }[cutsMode()];
+  if (cutsMode() !== 'long') {
+    const len = document.querySelector('input[name="shortsLen"]:checked').parentElement.textContent.trim();
+    modeLabel += ` (shorts: ${len})`;
+  }
   if (!confirm(`Gerar ${modeLabel} de:\n\n${title}\n\nIsso baixa e processa o vídeo inteiro (pode levar vários minutos).`)) return;
   try {
-    await api('/api/jobs', { url, title, dopamine: $('dopamineChk').checked, cuts_mode: cutsMode() });
+    await api('/api/jobs', { url, title, dopamine: $('dopamineChk').checked, cuts_mode: cutsMode(), ...shortsLen() });
     refreshJobs();
     if (!polling) polling = setInterval(refreshJobs, 1500);
   } catch (e) { alert(e.message); }
@@ -505,7 +532,13 @@ $('dopamineChk').onchange = () => localStorage.setItem('dopamine', $('dopamineCh
 const savedMode = localStorage.getItem('cutsMode') || 'both';
 const savedRadio = document.querySelector(`input[name="cutsMode"][value="${savedMode}"]`);
 if (savedRadio) savedRadio.checked = true;
-$('cutsModeSeg').onchange = () => localStorage.setItem('cutsMode', cutsMode());
+$('cutsModeSeg').onchange = () => { localStorage.setItem('cutsMode', cutsMode()); syncShortsLen(); };
+
+const savedLen = document.querySelector(`input[name="shortsLen"][value="${localStorage.getItem('shortsLen') || 'cfg'}"]`);
+if (savedLen) savedLen.checked = true;
+$('shortsLenSeg').onchange = () =>
+  localStorage.setItem('shortsLen', document.querySelector('input[name="shortsLen"]:checked').value);
+syncShortsLen();
 
 loadHealth();
 loadAuth();

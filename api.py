@@ -26,6 +26,9 @@ class JobReq(BaseModel):
     title: str
     dopamine: bool = False
     cuts_mode: str = "both"  # both | shorts | long
+    # Duração dos shorts escolhida na tela; sem os dois, vale o config.yaml
+    shorts_min: int | None = None
+    shorts_max: int | None = None
 
 
 def _llm_status() -> tuple[bool, str]:
@@ -60,6 +63,8 @@ def health() -> dict:
         "intro": (ROOT / CONFIG["paths"]["assets"] / "intro.mp4").exists(),
         "outro": (ROOT / CONFIG["paths"]["assets"] / "outro.mp4").exists(),
         "whisper_model": CONFIG["whisper"]["model"],
+        "shorts_seconds": [CONFIG["cuts"]["shorts"]["min_seconds"],
+                           CONFIG["cuts"]["shorts"]["max_seconds"]],
         "dopamine_videos": len(list(dopamine_dir.glob("*.mp4"))) if dopamine_dir.exists() else 0,
     }
 
@@ -142,8 +147,14 @@ def create_job(req: JobReq) -> dict:
         raise HTTPException(500, "ffmpeg não encontrado — instale e reinicie o app")
     if req.cuts_mode not in ("both", "shorts", "long"):
         raise HTTPException(400, "cuts_mode inválido")
+    shorts_seconds = None
+    if req.shorts_min is not None and req.shorts_max is not None:
+        # YouTube aceita Shorts de até 3 min
+        if not 10 <= req.shorts_min < req.shorts_max <= 180:
+            raise HTTPException(400, "Duração dos shorts inválida (entre 10 e 180 segundos)")
+        shorts_seconds = (req.shorts_min, req.shorts_max)
     return {"job_id": jobs.start_job(req.url, req.title, dopamine=req.dopamine,
-                                     cuts_mode=req.cuts_mode)}
+                                     cuts_mode=req.cuts_mode, shorts_seconds=shorts_seconds)}
 
 
 @app.get("/api/jobs")

@@ -30,6 +30,7 @@ class Job:
     mock: bool = False
     dopamine: bool = False
     cuts_mode: str = "both"          # both | shorts | long
+    shorts_seconds: tuple[int, int] | None = None  # (mín, máx) escolhido na tela; None = config.yaml
     output_dir: str = ""
 
     def add_log(self, msg: str) -> None:
@@ -52,9 +53,9 @@ _GPU_LOCK = threading.Lock()
 
 
 def start_job(video_url: str, video_title: str, dopamine: bool = False,
-              cuts_mode: str = "both") -> str:
+              cuts_mode: str = "both", shorts_seconds: tuple[int, int] | None = None) -> str:
     job = Job(id=uuid.uuid4().hex[:8], video_url=video_url, video_title=video_title,
-              dopamine=dopamine, cuts_mode=cuts_mode)
+              dopamine=dopamine, cuts_mode=cuts_mode, shorts_seconds=shorts_seconds)
     JOBS[job.id] = job
     threading.Thread(target=_pipeline, args=(job,), daemon=True).start()
     return job.id
@@ -116,7 +117,7 @@ def _pipeline(job: Job) -> None:
         _set(job, "Escolhendo os melhores cortes", 52)
         cuts = highlights.find_highlights(
             transcript, job.video_title, job.video_url,
-            log=job.add_log, cuts_mode=job.cuts_mode,
+            log=job.add_log, cuts_mode=job.cuts_mode, shorts_seconds=job.shorts_seconds,
         )
         job.mock = cuts.get("mock", False)
 

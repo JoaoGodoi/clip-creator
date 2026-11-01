@@ -8,6 +8,8 @@ Dois providers, escolhidos em config.yaml (llm.provider):
 """
 from __future__ import annotations
 
+import contextvars
+import copy
 import json
 import os
 import re
@@ -17,6 +19,15 @@ from typing import Callable
 import requests
 
 from .config import CONFIG, ROOT, ollama_url
+
+# Config de cortes do job atual: o cuts do config.yaml com os ajustes escolhidos
+# na tela (ex.: duração dos shorts). Cada job roda em sua própria thread, então
+# jobs simultâneos com escolhas diferentes não se misturam.
+_CUTS: contextvars.ContextVar[dict] = contextvars.ContextVar("cuts")
+
+
+def _cuts() -> dict:
+    return _CUTS.get(CONFIG["cuts"])
 
 RULES = """Regras obrigatórias:
 - Use APENAS timestamps que existem na transcrição.
@@ -219,7 +230,7 @@ def _wants(cuts_mode: str, duration: float, log: Callable[[str], None]) -> tuple
     want_shorts = cuts_mode != "long"
     want_long = cuts_mode != "shorts"
     if want_long:
-        min_s = CONFIG["cuts"]["long"]["min_minutes"] * 60
+        min_s = _cuts()["long"]["min_minutes"] * 60
         if duration < min_s:
             log(f"Vídeo curto ({duration / 60:.0f} min) — sem cortes longos")
             want_long = False
@@ -227,7 +238,7 @@ def _wants(cuts_mode: str, duration: float, log: Callable[[str], None]) -> tuple
 
 
 def _requests(want_long: bool, want_shorts: bool, per_block: bool) -> str:
-    cuts_cfg = CONFIG["cuts"]
+    cuts_cfg = _cuts()
     lines: list[str] = []
     if want_shorts:
         s = cuts_cfg["shorts"]
@@ -266,14 +277,24 @@ def find_highlights(
     video_url: str,
     log: Callable[[str], None] = print,
     cuts_mode: str = "both",
+    shorts_seconds: tuple[int, int] | None = None,
 ) -> dict:
-    want_long, want_shorts = _wants(cuts_mode, transcript["duration"], log)
-    if not want_long and not want_shorts:
-        return {"long": [], "shorts": [], "mock": False}
-    provider = CONFIG["llm"].get("provider", "ollama")
-    if provider == "ollama":
-        return _ollama_highlights(transcript, video_title, video_url, log, want_long, want_shorts)
-    return _anthropic_highlights(transcript, video_title, video_url, log, want_long, want_shorts)
+    """`shorts_seconds` (mín, máx) sobrepõe a duração dos shorts do config.yaml."""
+    cuts = copy.deepcopy(CONFIG["cuts"])
+    if shorts_seconds:
+        cuts["shorts"]["min_seconds"], cuts["shorts"]["max_seconds"] = shorts_seconds
+        log(f"Shorts de {shorts_seconds[0]} a {shorts_seconds[1]} segundos")
+    token = _CUTS.set(cuts)
+    try:
+        want_long, want_shorts = _wants(cuts_mode, transcript["duration"], log)
+        if not want_long and not want_shorts:
+            return {"long": [], "shorts": [], "mock": False}
+        provider = CONFIG["llm"].get("provider", "ollama")
+        if provider == "ollama":
+            return _ollama_highlights(transcript, video_title, video_url, log, want_long, want_shorts)
+        return _anthropic_highlights(transcript, video_title, video_url, log, want_long, want_shorts)
+    finally:
+        _CUTS.reset(token)
 
 
 # ── Provider: Ollama (local) ─────────────────────────────────────────────────
@@ -401,7 +422,7 @@ def _judge(candidates: dict, transcript: dict, video_title: str, log,
     Nota de bloco não é calibrada entre blocos; julgamento comparativo é onde
     o modelo local acerta mais.
     """
-    cuts_cfg = CONFIG["cuts"]
+    cuts_cfg = _cuts()
     n_long = cuts_cfg["long"]["count"] if want_long else 0
     n_shorts = cuts_cfg["shorts"]["count"] if want_shorts else 0
     min_score = float(cuts_cfg.get("min_score", 6))
@@ -465,7 +486,7 @@ def _rank_candidates(
     candidates: dict, transcript: dict, video_url: str, log,
     want_long: bool = True, want_shorts: bool = True,
 ) -> dict:
-    cuts_cfg = CONFIG["cuts"]
+    cuts_cfg = _cuts()
     duration = transcript["duration"]
     starts = [s["start"] for s in transcript["segments"]]
     ends = [s["end"] for s in transcript["segments"]]
@@ -588,7 +609,7 @@ def _extract_json(text: str) -> dict:
 
 def _mock_cuts(transcript: dict, video_url: str, want_long: bool = True, want_shorts: bool = True) -> dict:
     """Janelas uniformes só para validar download/edição/legenda sem LLM."""
-    cuts_cfg = CONFIG["cuts"]
+    cuts_cfg = _cuts()
     duration = transcript["duration"]
     result = {"long": [], "shorts": [], "mock": True}
 
