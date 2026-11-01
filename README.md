@@ -29,13 +29,11 @@ Para definir a chave permanentemente (PowerShell):
 setx ANTHROPIC_API_KEY "sua-chave-aqui"
 ```
 
-## Instalação (já feita)
+## Instalação
 
-```powershell
-python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
-# ffmpeg via: winget install Gyan.FFmpeg
-```
+Dois cliques no `setup.bat`: instala Python, FFmpeg, Deno, Ollama + modelo, as
+dependências (com as da GPU se houver NVIDIA) e baixa os vídeos de fundo.
+Passo a passo completo (e manual) em [INSTALACAO.md](INSTALACAO.md).
 
 ## Roadmap
 
