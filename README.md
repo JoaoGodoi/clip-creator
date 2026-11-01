@@ -71,9 +71,13 @@ conta Google e salve o `client_secret.json` na pasta do app.
 
 ## 🗑️ Desinstalar
 
-Configurações do Windows → Aplicativos → **Podcast Clipper** → Desinstalar. Os cortes já
-gerados (pasta `output`) ficam guardados. O Ollama é um app separado: desinstale por lá
-se quiser liberar os ~5 GB do modelo.
+**Menu Iniciar → Podcast Clipper → Desinstalar** (ou Configurações do Windows → Aplicativos).
+Ele pergunta se você quer **apagar tudo**:
+
+- **Sim**: não sobra nada. Apaga também os cortes já gerados, o modelo de IA e o Ollama.
+  Se o Ollama já estava no PC antes do Podcast Clipper, ele fica: sai só o modelo que o
+  instalador baixou.
+- **Não**: apaga o app, mas guarda os cortes já gerados.
 
 ---
 

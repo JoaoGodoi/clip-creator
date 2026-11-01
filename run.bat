@@ -3,6 +3,8 @@ cd /d "%~dp0"
 
 rem Ferramentas baixadas pelo instalador (ffmpeg, deno) ficam em ..\tools
 set "PATH=%~dp0..\tools\ffmpeg;%~dp0..\tools\deno;%PATH%"
+rem Instalado pelo .exe: o modelo do Whisper fica na pasta do app (sai junto na desinstalacao)
+if exist "%~dp0..\tools" set "HF_HOME=%~dp0..\hf"
 
 if not exist ".venv\Scripts\python.exe" (
     echo Projeto ainda nao instalado. Rode o instalador PodcastClipper-Setup.exe.

@@ -7,7 +7,7 @@
 ; Instala por usuario, sem pedir admin.
 
 #define AppName "Podcast Clipper"
-#define AppVersion "1.0"
+#define AppVersion "1.1"
 
 [Setup]
 AppId={{6E0B8F4A-3C1D-4E5B-9A7F-2D8C4B1E9F03}
@@ -54,9 +54,11 @@ Filename: "{app}\app\run.bat"; WorkingDir: "{app}\app"; Description: "Abrir o {#
 [UninstallRun]
 Filename: "powershell.exe"; Parameters: "-NoProfile -Command ""Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"""; Flags: runhidden; RunOnceId: "StopServer"
 
-; Apaga tudo menos a pasta output (os cortes ja gerados ficam).
-; O Ollama e o modelo de IA ficam instalados: remova pelo Painel de Controle se quiser.
+; Desinstalacao normal: apaga tudo menos a pasta output (os cortes ja gerados).
+; Se a pessoa escolher "apagar tudo" (pergunta no inicio da desinstalacao), o
+; [Code] tambem apaga output, Ollama e modelo de IA (veja CurUninstallStepChanged).
 [UninstallDelete]
+Type: filesandordirs; Name: "{app}\hf"
 Type: filesandordirs; Name: "{app}\tools"
 Type: filesandordirs; Name: "{app}\python"
 Type: filesandordirs; Name: "{app}\cache"
@@ -74,6 +76,7 @@ Type: files; Name: "{app}\app\*"
 [Code]
 var
   BootstrapOk: Boolean;
+  FullWipe: Boolean;
 
 function InstallOk: Boolean;
 begin
@@ -98,4 +101,61 @@ begin
              'Depois de resolver, use o atalho "Atualizar Podcast Clipper" no menu Iniciar ' +
              '(não precisa instalar de novo).', mbError, MB_OK);
   end;
+end;
+
+{ ---------------------------------------------------------------- desinstalacao }
+
+function InitializeUninstall(): Boolean;
+begin
+  FullWipe := False;
+  if not UninstallSilent then
+    FullWipe := MsgBox(
+      'Quer apagar TUDO do Podcast Clipper?' + #13#10 + #13#10 +
+      'SIM: apaga também os cortes já gerados, o modelo de IA e o Ollama ' +
+      '(se foi este instalador que instalou). Não sobra nada.' + #13#10 + #13#10 +
+      'NÃO: apaga o app, mas guarda os cortes já gerados.',
+      mbConfirmation, MB_YESNO) = IDYES;
+  Result := True;
+end;
+
+procedure RunHidden(const Exe, Params: String);
+var
+  ResultCode: Integer;
+begin
+  Exec(Exe, Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+{ So mexe no que o install.ps1 marcou como nosso: um Ollama que ja existia
+  no PC fica, e dele so saem os modelos que nos baixamos. }
+procedure WipeOllama;
+var
+  App, Ollama: String;
+  Models: TArrayOfString;
+  I: Integer;
+begin
+  App := ExpandConstant('{app}');
+  Ollama := ExpandConstant('{localappdata}\Programs\Ollama');
+  if FileExists(App + '\instalou-ollama.txt') then
+  begin
+    RunHidden('taskkill.exe', '/F /T /IM "ollama app.exe" /IM ollama.exe');
+    if FileExists(Ollama + '\unins000.exe') then
+      RunHidden(Ollama + '\unins000.exe', '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART');
+    DelTree(Ollama, True, True, True);
+    DelTree(ExpandConstant('{%USERPROFILE}\.ollama'), True, True, True);
+    DelTree(ExpandConstant('{localappdata}\Ollama'), True, True, True);
+  end
+  else if FileExists(Ollama + '\ollama.exe') and LoadStringsFromFile(App + '\baixou-modelos.txt', Models) then
+    for I := 0 to GetArrayLength(Models) - 1 do
+      if Trim(Models[I]) <> '' then
+        RunHidden(Ollama + '\ollama.exe', 'rm ' + Trim(Models[I]));
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if not FullWipe then
+    Exit;
+  if CurUninstallStep = usUninstall then
+    WipeOllama;
+  if CurUninstallStep = usPostUninstall then
+    DelTree(ExpandConstant('{app}'), True, True, True);
 end;

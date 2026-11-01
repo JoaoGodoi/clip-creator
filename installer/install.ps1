@@ -136,8 +136,13 @@ if (-not (Test-Path $ollama)) {
         }
     }
     Write-Host "    Instalando Ollama (1-2 min)..."
-    Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/NORESTART', '/SUPPRESSMSGBOXES' -Wait
+    # Nao usar -Wait: no PowerShell 5.1 ele espera tambem os processos filhos, e o
+    # setup do Ollama termina abrindo o app dele, que fica rodando -> travava aqui.
+    $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/NORESTART', '/SUPPRESSMSGBOXES' -PassThru
+    $p.WaitForExit()
     Remove-Item $setup -Force -ErrorAction SilentlyContinue
+    # O desinstalador ("apagar tudo") so remove o Ollama se fomos nos que instalamos
+    if (Test-Path $ollama) { Set-Content (Join-Path $AppDir 'instalou-ollama.txt') 'sim' }
 }
 if (-not (Test-Path $ollama)) { Fail "O Ollama nao instalou." }
 Ok "Ollama instalado"
@@ -160,8 +165,11 @@ $model = 'qwen3:8b'
 $m = Select-String -Path (Join-Path $App 'config.yaml') -Pattern '^\s*ollama_model:\s*(\S+)' | Select-Object -First 1
 if ($m) { $model = $m.Matches[0].Groups[1].Value }
 Step "Modelo de IA '$model' (~5 GB na primeira vez)"
+$hadModel = [bool]((& $ollama list) -match ('^' + [regex]::Escape($model) + '\s'))
 & $ollama pull $model
 if ($LASTEXITCODE -ne 0) { Fail "Nao consegui baixar o modelo $model." }
+# Idem para o modelo: o "apagar tudo" so remove modelos que nos baixamos
+if (-not $hadModel) { Add-Content (Join-Path $AppDir 'baixou-modelos.txt') $model }
 Ok "modelo pronto"
 
 # ---------------------------------------------------------------- videos de fundo
