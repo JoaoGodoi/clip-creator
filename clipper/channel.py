@@ -1,9 +1,7 @@
 """Listagem de vídeos de um canal do YouTube via yt-dlp (sem API key)."""
 from __future__ import annotations
 
-import yt_dlp
-
-from .config import ytdlp_auth
+from . import youtube
 
 
 def _normalize(url: str) -> str:
@@ -21,10 +19,8 @@ def list_videos(channel_url: str, limit: int = 24) -> list[dict]:
         "quiet": True,
         "no_warnings": True,
         "playlist_items": f"1:{limit}",
-        **ytdlp_auth(),
     }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(_normalize(channel_url), download=False)
+    info = youtube.extract(opts, _normalize(channel_url), download=False)
 
     entries = info.get("entries") or []
     videos = []

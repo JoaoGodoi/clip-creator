@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import captions, downloader, editor, highlights, thumbnails, transcriber
+from . import captions, downloader, editor, highlights, thumbnails, transcriber, youtube
 from .config import CONFIG, ROOT, path_for
 
 
@@ -147,7 +147,8 @@ def _pipeline(job: Job) -> None:
         job.add_log(f"Tudo pronto em: {out_root}")
     except Exception as e:  # noqa: BLE001 — erro vai para a UI
         job.status = "erro"
-        job.error = f"{type(e).__name__}: {e}"
+        # erro do YouTube já vem explicado em português: sem o nome técnico na frente
+        job.error = str(e) if isinstance(e, youtube.YouTubeBlocked) else f"{type(e).__name__}: {e}"
         job.add_log(f"ERRO: {job.error}")
         job.add_log(traceback.format_exc().splitlines()[-2])
 
