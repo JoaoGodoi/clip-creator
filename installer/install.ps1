@@ -19,11 +19,9 @@ $Tools = Join-Path $AppDir 'tools'
 $Tmp   = Join-Path $AppDir 'tmp'
 New-Item -ItemType Directory -Force $Tools, $Tmp | Out-Null
 
-$env:UV_PYTHON_INSTALL_DIR = Join-Path $AppDir 'python'
 $env:UV_CACHE_DIR = Join-Path $AppDir 'cache'
-# Sempre o Python proprio do app: um Python do sistema pode ser desinstalado
-# depois e levar a .venv junto.
-$env:UV_PYTHON_PREFERENCE = 'only-managed'
+# O Python e baixado por nos (secao Python); o uv nunca baixa nem instala um.
+$env:UV_PYTHON_DOWNLOADS = 'never'
 $env:Path = "$Tools\ffmpeg;$Tools\deno;$Tools\uv;$env:Path"
 
 function Step($msg) { Write-Host ""; Write-Host "==> $msg" -ForegroundColor Cyan }
@@ -76,15 +74,35 @@ $uv = Join-Path $Tools 'uv\uv.exe'
 
 # ---------------------------------------------------------------- Python
 Step "Python 3.12 e ambiente do projeto"
+# Python standalone (o mesmo build que o uv usaria), baixado direto para
+# <AppDir>\python. Nao deixamos o uv instalar: ele cria uma junction
+# "3.12 -> 3.12.x", e o Inno Setup liga o RedirectionGuard, que os processos
+# filhos herdam e que bloqueia a junction (os error 448).
+# Um Python do sistema tambem nao serve: pode ser desinstalado e levar a .venv junto.
+$PythonUrl = 'https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16%2B20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz'
+$PyDir = Join-Path $AppDir 'python'
+$basePy = Join-Path $PyDir 'python.exe'
+if (-not (Test-Path $basePy)) {
+    # rmdir nao segue junctions: limpa a sobra de versoes antigas do instalador
+    if (Test-Path $PyDir) { cmd /c rmdir /s /q "`"$PyDir`"" }
+    $tgz = Join-Path $Tmp 'python.tar.gz'
+    if (-not (Download $PythonUrl $tgz)) { Fail "Nao consegui baixar o Python. Confira a internet e tente de novo." }
+    $x = Join-Path $Tmp 'python-x'
+    Extract $tgz $x
+    Move-Item (Join-Path $x 'python') $PyDir
+    Remove-Item $x, $tgz -Recurse -Force -ErrorAction SilentlyContinue
+}
+if (-not (Test-Path $basePy)) { Fail "O Python baixou, mas nao consegui extrair." }
+
 $venvPy = Join-Path $App '.venv\Scripts\python.exe'
 $cfg = Join-Path $App '.venv\pyvenv.cfg'
-if ((Test-Path $cfg) -and -not (Select-String -Path $cfg -SimpleMatch "home = $env:UV_PYTHON_INSTALL_DIR" -Quiet)) {
+if ((Test-Path $cfg) -and -not (Select-String -Path $cfg -Pattern ('^home = ' + [regex]::Escape($PyDir) + '\s*$') -Quiet)) {
     Write-Host "    Recriando a .venv com o Python proprio do app..."
-    Remove-Item (Join-Path $App '.venv') -Recurse -Force
+    cmd /c rmdir /s /q "`"$(Join-Path $App '.venv')`""
 }
 if (-not (Test-Path $venvPy)) {
     # --seed poe o pip na venv: o run.bat usa para atualizar o yt-dlp
-    & $uv venv --python 3.12 --seed (Join-Path $App '.venv')
+    & $uv venv --python $basePy --seed (Join-Path $App '.venv')
 }
 if (-not (Test-Path $venvPy)) { Fail "Nao consegui criar o ambiente Python." }
 Ok ".venv pronta"
