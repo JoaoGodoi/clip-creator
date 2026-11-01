@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from clipper import channel, jobs, uploader
-from clipper.config import CONFIG, FFMPEG, ROOT, has_api_key, path_for
+from clipper.config import CONFIG, FFMPEG, ROOT, has_api_key, ollama_url, path_for
 
 app = FastAPI(title="Podcast Clipper")
 
@@ -40,7 +40,7 @@ def _llm_status() -> tuple[bool, str]:
 
     model = cfg.get("ollama_model", "?")
     try:
-        resp = requests.get(f"{cfg.get('ollama_url', 'http://localhost:11434')}/api/tags", timeout=2)
+        resp = requests.get(f"{ollama_url()}/api/tags", timeout=2)
         names = [m["name"] for m in resp.json().get("models", [])]
     except Exception:  # noqa: BLE001 — qualquer falha = ollama fora do ar
         return False, "ollama não está rodando"

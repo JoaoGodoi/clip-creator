@@ -1,4 +1,4 @@
-"""Teste rápido da instalação (o setup.bat roda no final).
+"""Teste rápido da instalação (o instalador roda no final).
 
 Exercita de verdade as partes que já quebraram por versão de biblioteca:
 decodificar áudio com o faster-whisper (PyAV) e o solver JS do yt-dlp.

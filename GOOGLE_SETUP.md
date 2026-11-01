@@ -27,7 +27,7 @@ na sua conta — nenhum código seu fica exposto, o arquivo fica só na sua máq
 
 6. **Baixe o JSON** (botão de download na credencial criada) e salve como:
    ```
-   C:\Users\bisteca\Desktop\podcast_clipper\client_secret.json
+   %LOCALAPPDATA%\PodcastClipper\app\client_secret.json
    ```
 
 7. Abra o Podcast Clipper (`run.bat`) → clique em **"Conectar YouTube"** →

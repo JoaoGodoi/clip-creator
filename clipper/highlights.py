@@ -16,7 +16,7 @@ from typing import Callable
 
 import requests
 
-from .config import CONFIG, ROOT
+from .config import CONFIG, ROOT, ollama_url
 
 RULES = """Regras obrigatórias:
 - Use APENAS timestamps que existem na transcrição.
@@ -280,7 +280,7 @@ def find_highlights(
 
 def _ollama_chat(prompt: str) -> str:
     cfg = CONFIG["llm"]
-    url = cfg.get("ollama_url", "http://localhost:11434").rstrip("/")
+    url = ollama_url()
     try:
         resp = requests.post(
             f"{url}/api/chat",

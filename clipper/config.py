@@ -25,6 +25,13 @@ def path_for(key: str) -> Path:
     return p
 
 
+def ollama_url() -> str:
+    """URL do Ollama. `localhost` vira 127.0.0.1: no Windows ele tenta IPv6 (::1)
+    primeiro, o Ollama só escuta IPv4 e a tentativa gasta ~2s antes de cair pro IPv4."""
+    url = CONFIG["llm"].get("ollama_url", "http://127.0.0.1:11434").rstrip("/")
+    return url.replace("//localhost:", "//127.0.0.1:")
+
+
 def find_ffmpeg() -> str | None:
     """Procura ffmpeg no PATH, na pasta do instalador e nos locais padrão do winget."""
     found = shutil.which("ffmpeg")

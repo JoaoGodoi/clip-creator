@@ -117,7 +117,7 @@ if (-not (Test-Path $ollama)) { Fail "O Ollama nao instalou." }
 Ok "Ollama instalado"
 
 function Ollama-Up {
-    try { Invoke-RestMethod 'http://localhost:11434/api/version' -TimeoutSec 2 | Out-Null; return $true }
+    try { Invoke-RestMethod 'http://127.0.0.1:11434/api/version' -TimeoutSec 2 | Out-Null; return $true }
     catch { return $false }
 }
 # O app do Ollama costuma subir sozinho depois de instalar, mas na primeira vez
