@@ -34,6 +34,21 @@ def ollama_url() -> str:
     return url.replace("//localhost:", "//127.0.0.1:")
 
 
+def ytdlp_auth() -> dict:
+    """Login do YouTube para o yt-dlp, quando ele começa a pedir "Sign in to confirm
+    you're not a bot" (IP marcado por muitos downloads). Opcional:
+    - cookies.txt na pasta do app (exportado do navegador logado), ou
+    - youtube.cookies_from_browser no config.yaml (firefox funciona; chrome/edge
+      no Windows criptografam os cookies e o yt-dlp não consegue ler)."""
+    cookie_file = ROOT / "cookies.txt"
+    if cookie_file.exists():
+        return {"cookiefile": str(cookie_file)}
+    browser = (CONFIG.get("youtube") or {}).get("cookies_from_browser")
+    if browser:
+        return {"cookiesfrombrowser": (str(browser).lower(),)}
+    return {}
+
+
 def find_ffmpeg() -> str | None:
     """Procura ffmpeg no PATH, na pasta do instalador e nos locais padrão do winget."""
     found = shutil.which("ffmpeg")

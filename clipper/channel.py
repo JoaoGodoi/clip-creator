@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import yt_dlp
 
+from .config import ytdlp_auth
+
 
 def _normalize(url: str) -> str:
     url = url.strip().rstrip("/")
@@ -19,6 +21,7 @@ def list_videos(channel_url: str, limit: int = 24) -> list[dict]:
         "quiet": True,
         "no_warnings": True,
         "playlist_items": f"1:{limit}",
+        **ytdlp_auth(),
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(_normalize(channel_url), download=False)

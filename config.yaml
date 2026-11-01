@@ -9,6 +9,12 @@ paths:
   output: output
   assets: assets            # coloque intro.mp4 e outro.mp4 aqui (opcionais)
 
+youtube:
+  # Se o download der "Sign in to confirm you're not a bot": login do YouTube
+  # pelo navegador. Use firefox (chrome/edge no Windows não funcionam).
+  # Ou coloque um cookies.txt na pasta do app, que tem prioridade.
+  cookies_from_browser: ""
+
 whisper:
   model: medium             # tiny | base | small | medium | large-v3
   language: pt

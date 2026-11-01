@@ -6,7 +6,7 @@ from typing import Callable
 
 import yt_dlp
 
-from .config import FFMPEG
+from .config import FFMPEG, ytdlp_auth
 
 
 def download(video_url: str, dest_dir: Path, progress_cb: Callable[[float, str], None] | None = None) -> Path:
@@ -29,6 +29,7 @@ def download(video_url: str, dest_dir: Path, progress_cb: Callable[[float, str],
         "no_warnings": True,
         "progress_hooks": [hook],
         "noplaylist": True,
+        **ytdlp_auth(),
     }
     if FFMPEG:
         opts["ffmpeg_location"] = str(Path(FFMPEG).parent)

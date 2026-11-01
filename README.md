@@ -51,12 +51,28 @@ o que estiver faltando ou quebrado e testa tudo no final. Resolve a maioria dos 
 
 | Sintoma | Solução |
 |---|---|
+| "Sign in to confirm you're not a bot" | O YouTube marcou o seu IP (muito download seguido, VPN). Desligue a VPN ou reinicie o roteador. Se continuar, use os cookies de uma conta do YouTube: veja abaixo. |
 | Deu erro na janela preta da instalação | Mande um print + o arquivo `%LOCALAPPDATA%\PodcastClipper\install-log.txt` (cole esse caminho na barra do Explorer). |
 | Download do YouTube falha / erro 403 | Feche e abra o app: ao abrir ele atualiza o yt-dlp sozinho. |
 | "ollama não está rodando" | Feche (Menu Iniciar → Fechar Podcast Clipper) e abra o app de novo. |
 | Log diz "GPU indisponível, usando CPU" | Normal sem placa NVIDIA. Com NVIDIA: atualize o driver em nvidia.com/pt-br/drivers. |
 | PC travando no render | No `config.yaml`, coloque `render.parallel_renders: 1`. |
 | Qualquer outro erro estranho | **Atualizar Podcast Clipper** no Menu Iniciar. |
+
+### YouTube pedindo login ("not a bot")
+
+O app usa o login do YouTube de um navegador. **Use uma conta secundária**: o YouTube
+pode restringir contas usadas para baixar vídeos.
+
+- **Jeito mais fácil (Firefox):** entre no YouTube pelo **Firefox** com a conta, feche o
+  Firefox e, no `config.yaml` da pasta do app, troque `cookies_from_browser: ""` por
+  `cookies_from_browser: "firefox"`. Feche e abra o app.
+- **Qualquer navegador:** instale a extensão **Get cookies.txt LOCALLY**, abra o youtube.com
+  logado, exporte e salve o arquivo como `cookies.txt` na pasta do app
+  (`%LOCALAPPDATA%\PodcastClipper\app`, ou a pasta que você escolheu na instalação). Feche e
+  abra o app. Chrome e Edge só funcionam por esse jeito.
+
+O `cookies.txt` dá acesso à conta: não mande para ninguém.
 
 ## ⚙️ Personalizar (opcional)
 

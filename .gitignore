@@ -12,3 +12,4 @@ assets/music/*.m4a
 assets/music/*.mp3
 installer/Output/
 .venv.old/
+cookies.txt
