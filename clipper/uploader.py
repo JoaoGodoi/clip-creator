@@ -154,6 +154,11 @@ def upload_clip(folder: Path, progress_cb: Callable[[float], None]) -> str:
         "status": {
             "privacyStatus": up_cfg.get("privacy", "private"),
             "selfDeclaredMadeForKids": False,
+            # "Conteúdo alterado ou sintético" = Não. É a gravação real do podcast:
+            # a IA só escolhe o trecho e escreve título/descrição, o que a política
+            # do YouTube não exige declarar (vale para voz/rosto/cena gerados).
+            # Sem o campo, a pergunta fica sem resposta e o YouTube decide sozinho.
+            "containsSyntheticMedia": False,
         },
     }
 
